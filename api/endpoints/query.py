@@ -1,10 +1,11 @@
 # Librerías
-import logging
-from fastapi import APIRouter, UploadFile, File, HTTPException
-from services.ingestion.ingest import IngestService
-from services.ingestion.chunking import ChunkService
-from services.ingestion.embedding import EmbeddingService
+from fastapi import APIRouter, HTTPException, Query
 from services.ingestion.vector_store import VectorStoreService
+from services.ingestion.embedding import EmbeddingService
+from services.query.rag_retriever import Retriever
+from services.query.reranker import Reranker
+from services.query.llm_service import LLMService
+import logging
 
 # Se obtiene el logger para este módulo
 logger = logging.getLogger(__name__)
@@ -12,70 +13,57 @@ logger = logging.getLogger(__name__)
 # Se crea un enrutador
 router = APIRouter()
 
-# @router.post("/query", tags="Consulta")
-# async def query_rag(payload: ):
+# Inicializamos servicios
+embedder = EmbeddingService()
+vectorstore = VectorStoreService(embedder)
+retriever = Retriever(embedder, vectorstore)
+reranker = Reranker()
+llm_service = LLMService()
 
-#     try:
-#         question = payload.question
 
-#         # 1. Retrieval (top-k)
-#         docs = vectorstore.search(
-#             query=question,
-#             k=payload.top_k
-#         )
+# Endpoint para hacer consulta
+@router.get("/query", tags=["Consulta"])
+async def query(
+    q: str = Query(..., description="Consulta en lenguaje natural"),
+    top_k: int = Query(5, description="Número de documentos a recuperar antes del reranking"),
+    rerank_top_k: int = Query(3, description="Número de documentos finales tras reranking")
+):
+    """
+    Endpoint para realizar consultas sobre los PDFs ingeridos.
+    """
+    try:
+        # Recupera chunks relevantes
+        docs = retriever.retrieve(q, top_k=top_k)
 
-#         if not docs:
-#             return {
-#                 "answer": "No se encontraron documentos relevantes.",
-#                 "sources": []
-#             }
+        # Re-ranking con esos documentos de Langchain
+        top_docs = reranker.rerank(q, docs, top_k=rerank_top_k)
 
-#         # 2. Reranking (mejora precisión)
-#         reranked_docs = reranker.rerank(
-#             query=question,
-#             docs=docs,
-#             top_k=3
-#         )
+        # Generar la respuesta
+        response = llm_service.generate(q, top_docs)
 
-#         # 3. Construcción de contexto con citas
-#         context = "\n\n".join([
-#             f"[Fuente: {d.metadata.get('source')} | pág {d.metadata.get('page')}]\n{d.page_content}"
-#             for d in reranked_docs
-#         ])
+        # Preparar salida (ya usa correctamente Document)
+        doc_output = [
+            {
+                "text": d.page_content,
+                "source": d.metadata.get("source"),
+                "page": d.metadata.get("page"),
+                "chunk_id": d.metadata.get("chunk_id")
+            }
+            for d in top_docs
+        ]
 
-#         # 4. Prompt al LLM
-#         prompt = f"""
-# Responde usando SOLO el contexto.
+        # Devuelve el diccionario de respuesta con la consulta, la respuesta y
+        # los documentos de referencia con sus metadatos
+        return {
+            "query": q,
+            "response": response,
+            "documents": doc_output
+        }
 
-# Contexto:
-# {context}
-
-# Pregunta:
-# {question}
-
-# Reglas:
-# - Cita fuente y página
-# - Si no está en el contexto, di "no encontrado"
-# """
-
-#         # 5. Generación LLM
-#         answer = llm.invoke(prompt)
-
-#         # 6. Formato de salida estructurado
-#         return {
-#             "question": question,
-#             "answer": answer,
-#             "sources": [
-#                 {
-#                     "source": d.metadata.get("source"),
-#                     "page": d.metadata.get("page")
-#                 }
-#                 for d in reranked_docs
-#             ]
-#         }
-
-#     except Exception as e:
-#         raise HTTPException(
-#             status_code=500,
-#             detail=f"Error en query: {str(e)}"
-#         )
+    # Excepción
+    except Exception as e:
+        logger.error(f"Error procesando consulta: {e}.")
+        raise HTTPException(
+            status_code=500,
+            detail="Error procesando la consulta"
+        )

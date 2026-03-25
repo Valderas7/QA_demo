@@ -1,7 +1,7 @@
 # Librerías
 import logging
 from typing import List
-from langchain_community.llms import ollama
+from langchain_ollama import OllamaLLM
 from langchain_core.documents import Document
 
 # Logger del módulo
@@ -17,15 +17,14 @@ class LLMService:
     Incluye citación de fuente y número de página.
     """
 
-    def __init__(self, model_name: str = "mistral") -> None:
+    def __init__(self, model_name: str = "llama3.1") -> None:
         """
         Inicializa el cliente de LLM.
 
         Args:
             model_name (str): Nombre del modelo disponible en Ollama.
         """
-        self.model_name = model_name
-        self.llm = ollama(model=model_name)
+        self.llm = OllamaLLM(model=model_name, temperature=0)
 
     def generate(self, query: str, docs: List[Document]) -> str:
         """
@@ -51,7 +50,7 @@ class LLMService:
             logger.warning("No se recibieron documentos para generar contexto.")
             return "No encontrado en los documentos proporcionados."
 
-        # Se cosntruye el contexto
+        # Se construye el contexto
         context = "\n\n".join([
             f"[Fuente: {d.metadata.get('source')} - pág {d.metadata.get('page')}]\n"
             f"{d.page_content}"
@@ -60,30 +59,27 @@ class LLMService:
 
         # Prompt controlado (RAG)
         prompt = f"""
-Responde a la pregunta usando SOLO el contexto proporcionado.
+        Responde a la pregunta usando SOLO el contexto proporcionado.
 
-Contexto:
-{context}
+        Contexto:
+        {context}
 
-Pregunta:
-{query}
+        Pregunta:
+        {query}
 
-Instrucciones:
-- Responde de forma clara y precisa.
-- Cita siempre la fuente y número de página.
-- Si la información no está en el contexto, responde: "No encontrado".
-"""
+        Instrucciones:
+        - Responde de forma clara y precisa.
+        - Cita siempre la fuente y número de página.
+        - Si la información no está en el contexto, responde: "No encontrado".
+        """
 
-        logger.info(
-            f"Generando respuesta con {len(docs)} documentos | modelo={self.model_name}"
-        )
-
+        # Se intenta
         try:
             response: str = self.llm.invoke(prompt)
-
-            logger.debug("Respuesta generada correctamente.")
+            logger.info("Respuesta generada correctamente.")
             return response
 
+        # Excepción
         except Exception as e:
             logger.error(f"Error generando respuesta: {e}")
             raise

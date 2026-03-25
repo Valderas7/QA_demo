@@ -1,6 +1,7 @@
 # Librerías
 import logging
 import tiktoken
+from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from typing import List, Dict
 
@@ -37,7 +38,7 @@ class ChunkService:
         pages: List[Dict],
         chunk_size: int = 512,
         chunk_overlap: int = 100
-    ) -> List[Dict]:
+    ) -> List[Document]:
         """
         Divide una lista de páginas en chunks de tamaño fijo basados en
         tokens.
@@ -61,13 +62,9 @@ class ChunkService:
             consecutivos.
 
         Returns:
-            List[Dict]: Lista de chunks con estructura:
-            {
-                "text": str,
-                "page": int,
-                "source": str,
-                "chunk_id": int
-            }
+            List[Document]: Lista de Document de LangChain con:
+            - page_content: texto del chunk
+            - metadata: {"page": int, "source": str, "chunk_id": int}
         """
         # Si no hay páginas se devuelve lista vacía
         if not pages:
@@ -111,19 +108,23 @@ class ChunkService:
             # Para cada chunk...
             for split_text in split_texts:
 
-                # Se agrega a la lista un diccionario con el chunk, la página
-                # del texto, el archivo fuente y el ID del chunk
-                chunks.append({
-                    "text": split_text,
-                    "page": page.get("page"),
-                    "source": page.get("source"),
-                    "chunk_id": chunk_id
-                })
+                # Se añade a la lista un Documento con el texto como contenido
+                # y los metadatos de página, fuente e ID
+                chunks.append(
+                    Document(
+                        page_content=split_text,
+                        metadata={
+                            "page": page.get("page"),
+                            "source": page.get("source"),
+                            "chunk_id": chunk_id
+                        }
+                    )
+                )
 
                 # Se aumenta en uno el contador de chunks
                 chunk_id += 1
 
-        # Se devuelve la lista de chunks
+        # Se devuelve la lista de documentos
         logger.info(
             f"Generados {len(chunks)} chunks recursivos de {len(pages)} "
             "páginas."

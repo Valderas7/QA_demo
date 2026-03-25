@@ -1,8 +1,9 @@
 # Librerías
 import logging
 from langchain_community.vectorstores import FAISS
+from langchain_core.documents import Document
 from langchain_core.vectorstores import VectorStoreRetriever
-from typing import List, Dict
+from typing import List
 
 # Logger del módulo
 logger = logging.getLogger(__name__)
@@ -54,36 +55,28 @@ class VectorStoreService:
             logger.info("No existe índice, creando uno nuevo.")
             return None
 
-    def add(self, texts: List[str], metadatas: List[Dict]) -> None:
+    def add(self, documents: List[Document]) -> None:
         """
         Añade nuevos documentos al índice vectorial.
-
-        Si el índice no existe, lo crea desde cero.
-        Si ya existe, añade los nuevos embeddings de forma incremental.
-
+        
         Args:
-            texts (List[str]): Lista de textos (chunks).
-            metadatas (List[Dict]): Metadata asociada a cada chunk
-            (ej: page, source, chunk_id)
+            documents (List[Document]): Lista de Document de LangChain
         """
-        # Si el atributo está vacío se crea el índice
+        # Si el atributo del índice vectorial está vacío, se crea a
+        # partir de los documentos de Lnagchain
         if self.db is None:
-            self.db = FAISS.from_texts(
-                texts=texts,
-                embedding=self.embeddings,
-                metadatas=metadatas
+            self.db = FAISS.from_documents(
+                documents=documents,
+                embedding=self.embeddings
             )
         
-        # Si no está vacío, se añaden los nuevos vectores al índice
+        # Si no, se añaden los nuevos documentos
         else:
-            self.db.add_texts(
-                texts=texts,
-                metadatas=metadatas
-            )
+            self.db.add_documents(documents)
 
         # Se guarda el índice en local
         self.db.save_local(self.path)
-        logger.info(f"Índice actualizado con {len(texts)} chunks.")
+        logger.info(f"Índice actualizado con {len(documents)} chunks.")
 
     def get_retriever(self, k: int = 5) -> VectorStoreRetriever:
         """
@@ -100,3 +93,21 @@ class VectorStoreService:
 
         # Se recuperan los Top K candidatos
         return self.db.as_retriever(search_kwargs={"k": k})
+    
+    def search(self, embedding, k: int = 5) -> List[Document]:
+        """
+        Busca los documentos más similares a un embedding dado.
+        
+        Returns:
+            List[Document]: Documentos recuperados (con page_content y
+            metadata)
+        """
+        # Si el atributo del índice vectorial está vacío, se eleva error
+        if self.db is None:
+            raise ValueError("Vector store no inicializado")
+
+        # Se buscan los documentos de langchain más similares a la consulta
+        docs = self.db.similarity_search_by_vector(embedding, k=k)
+
+        # Devuelve dichos documentos de Langchain
+        return docs

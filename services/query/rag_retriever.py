@@ -1,3 +1,8 @@
+# Librerías
+from langchain_core.documents import Document
+from typing import List
+
+
 class Retriever:
     """
     Componente de recuperación (retrieval) en un pipeline RAG.
@@ -22,7 +27,7 @@ class Retriever:
         self.embedder = embedder
         self.vs = vectorstore
 
-    def retrieve(self, query: str, top_k: int = 5):
+    def retrieve(self, query: str, top_k: int = 5) -> List[Document]:
         """
         Recupera los chunks más relevantes para una consulta dada.
 
@@ -35,14 +40,10 @@ class Retriever:
             top_k (int): Número de resultados más relevantes a recuperar.
 
         Returns:
-            List[Dict]: Lista de documentos/chunks relevantes, cada uno con
-            metadata, típicamente con estructura:
-            {
-                "text": str,
-                "page": int,
-                "source": str,
-                ...
-            }
+            List[Document]: Lista de documentos de Langchain
         """
-        q_emb = self.embedder.embed([query])[0]
+        embedding_model = self.embedder.get()
+        q_emb = embedding_model.embed_query(query)
+
+        # Buscamos en el vectorstore
         return self.vs.search(q_emb, top_k)

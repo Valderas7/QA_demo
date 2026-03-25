@@ -41,23 +41,13 @@ async def ingest_pdf(file: UploadFile = File(...)):
             source=file.filename
         )
 
-        # Chunkea el texto del PDF
+        # Chunkea el texto del PDF, obteniendo una lista de documentos
+        # de Langchain
         chunks = chunker.chunk_text(pages)
-
-        # Se separan los textos y metadatos de los chunks
-        texts = [chunk["text"] for chunk in chunks]
-        metadatas = [
-            {
-                "page": chunk["page"],
-                "source": chunk["source"],
-                "chunk_id": chunk["chunk_id"]
-            }
-            for chunk in chunks
-        ]
 
         # Se guarda en la BBDD vectorial los embeddings a partir de los
         # chunks obtenidos
-        vectorstore.add(texts, metadatas)
+        vectorstore.add(chunks)
 
         # Devuelve un diccionario con los chunks indexados
         return {
