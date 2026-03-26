@@ -17,7 +17,7 @@ class LLMService:
     Incluye citación de fuente y número de página.
     """
 
-    def __init__(self, model_name: str = "llama3.1") -> None:
+    def __init__(self, model_name: str = "gemma2:2b") -> None:
         """
         Inicializa el cliente de LLM.
 
@@ -50,14 +50,15 @@ class LLMService:
             logger.warning("No se recibieron documentos para generar contexto.")
             return "No encontrado en los documentos proporcionados."
 
-        # Se construye el contexto
+        # Se construye el contexto uniendo la fuente (el PDF), la página donde
+        # aparece y el texto para cada uno de los documentos de Langchain
         context = "\n\n".join([
-            f"[Fuente: {d.metadata.get('source')} - pág {d.metadata.get('page')}]\n"
-            f"{d.page_content}"
-            for d in docs
+            f"[Fuente: {doc.metadata.get('source')} - pág {doc.metadata.get('page')}]\n"
+            f"{doc.page_content}"
+            for doc in docs
         ])
 
-        # Prompt controlado (RAG)
+        # Prompt donde se le pasa el contexto y la pregunta
         prompt = f"""
         Responde a la pregunta usando SOLO el contexto proporcionado.
 
@@ -73,7 +74,7 @@ class LLMService:
         - Si la información no está en el contexto, responde: "No encontrado".
         """
 
-        # Se intenta
+        # Se intenta invocar al modelo
         try:
             response: str = self.llm.invoke(prompt)
             logger.info("Respuesta generada correctamente.")
@@ -81,5 +82,5 @@ class LLMService:
 
         # Excepción
         except Exception as e:
-            logger.error(f"Error generando respuesta: {e}")
+            logger.error(f"Error generando respuesta: {e}.")
             raise
