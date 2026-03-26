@@ -76,23 +76,13 @@ class VectorStoreService:
 
         # Se guarda el índice en local
         self.db.save_local(self.path)
-        logger.info(f"Índice actualizado con {len(documents)} chunks.")
 
-    def get_retriever(self, k: int = 5) -> VectorStoreRetriever:
-        """
-        Devuelve un retriever configurado para búsqueda semántica.
-
-        Args:
-            k (int): Número de documentos relevantes a recuperar.
-
-        Returns:
-            VectorStoreRetriever: Retriever configurado con top-k.
-        """
-        if self.db is None:
-            raise ValueError("Vector store no inicializado")
-
-        # Se recuperan los Top K candidatos
-        return self.db.as_retriever(search_kwargs={"k": k})
+        # Se recopilan cuantos chunks totales hay
+        total_docs = len(self.db.index_to_docstore_id) if self.db else 0
+        logger.info(
+            f"Índice actualizado con {len(documents)} chunks nuevos. "
+            f"TOTAL: {total_docs} chunks"
+        )
     
     def search(self, embedding, k: int = 5) -> List[Document]:
         """

@@ -1,4 +1,5 @@
 # Librerías
+from core.dependencies import vectorstore
 from fastapi import APIRouter, HTTPException, Query
 from services.ingestion.vector_store import VectorStoreService
 from services.ingestion.embedding import EmbeddingService
@@ -15,7 +16,6 @@ router = APIRouter()
 
 # Inicializamos servicios
 embedder = EmbeddingService()
-vectorstore = VectorStoreService(embedder)
 retriever = Retriever(embedder, vectorstore)
 reranker = Reranker()
 llm_service = LLMService()
@@ -31,7 +31,9 @@ async def query(
     """
     Endpoint para realizar consultas sobre los PDFs ingeridos.
     """
+    # Se intenta...
     try:
+
         # Recupera chunks relevantes
         docs = retriever.retrieve(q, top_k=top_k)
 

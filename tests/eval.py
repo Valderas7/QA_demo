@@ -53,8 +53,8 @@ def has_valid_citations(response: str, returned_docs: List[Dict]) -> bool:
         modelo, con campos "source" y "page".
 
     Returns:
-        bool: True si al menos una cita coincide con los documentos
-        devueltos, False en caso contrario.
+        bool: True si hay citas en el texto y al menos una coincide con
+        los documentos reales
     """
     citations = re.findall(r"Fuente:\s*([^\s-]+?)\s*-\s*pág\s*(\d+)", response)
     if not citations:
