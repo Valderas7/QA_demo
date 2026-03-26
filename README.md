@@ -221,3 +221,47 @@ FAISS se inicializa en memoria. Para persistencia, modifica `services/ingestion/
 ## Logs
 
 Los logs se generan en formato JSON estructurado para facilitar su análisis. La configuración se encuentra en `core/logging.py`.
+
+
+## Decisiones Técnicas
+
+El sistema implementa un pipeline RAG completo que combina recuperación de información con generación de respuestas:
+
+1. **Ingesta y Procesamiento**
+   - **PDFPlumber** para extracción de texto: Elegido por su precisión en la extracción de texto estructurado de PDFs
+   - **Chunking estratégico**: División del texto en fragmentos semánticamente coherentes para optimizar la recuperación
+
+2. **Embedding y Búsqueda Vectorial**
+   - **Sentence Transformers**: Modelos pre-entrenados de HuggingFace para generar embeddings de alta calidad
+   - **FAISS (Facebook AI Similarity Search)**: Base de datos vectorial eficiente para búsqueda por similitud en memoria, lo que permite hacer búsquedas rápidas en un entorno local con baja latencia.
+
+3. **Re-ranking**
+   - Capa adicional de refinamiento tras la recuperación inicial, ya que evalúa cada par (query, documento) de forma conjunta, mejorando la relevancia de los documentos seleccionados antes de la generación
+   - Reduce el ruido y falsos positivos en el contexto enviado al LLM
+
+4. **Modelo de Lenguaje**
+   - **Ollama con gemma2:2b**
+   - Ventaja: Modelo ligero (2B parámetros) ejecutado localmente.
+   - TDesventaja: Menor capacidad vs modelos más grandes
+
+5. **Framework y API**
+   - **LangChain**: Abstracción de alto nivel para pipelines LLM
+   - **FastAPI**: Framework moderno con validación automática (Pydantic), documentación OpenAPI y alto rendimiento
+   - **Arquitectura modular**: Separación clara entre servicios (ingesta, query, embeddings, etc.)
+
+### Flujo de Datos
+
+```
+PDF → Extracción de texto → Chunking → Embeddings → FAISS
+                                                        ↓
+Query → Embedding → Búsqueda vectorial (top_k) → Re-ranking → LLM → Respuesta
+```
+
+### Logging Estructurado
+
+- Formato JSON para facilitar análisis y monitorización
+- En este formato tiene una mejor integración con sistemas de observabilidad.
+
+### Escalabilidad
+
+- **Actual**: FAISS en memoria, ideal para prototipos y datasets pequeños-medianos
