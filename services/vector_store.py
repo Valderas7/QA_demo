@@ -1,5 +1,6 @@
 # Librerías
 import logging
+import threading
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
@@ -28,6 +29,7 @@ class VectorStoreService:
         self.embeddings = embeddings
         self.path = path
         self.db = self._load_or_create()
+        self.lock = threading.Lock()
 
     def _load_or_create(self) -> FAISS:
         """
@@ -70,20 +72,24 @@ class VectorStoreService:
             logger.warning("No se proporcionaron documentos para añadir.")
             return
 
-        # Si el índice vectorial está vacío, se crea a partir de los chunks
-        # proporcionados y los embeddings
-        if self.db is None:
-            self.db = FAISS.from_documents(
-                documents=documents,
-                embedding=self.embeddings
-            )
-        
-        # Si no, se añaden los nuevos documentos
-        else:
-            self.db.add_documents(documents)
+        # Se adquiere el lock para asegurar que solo un hilo pueda
+        # modificar el índice a la vez, evitando problemas de concurrencia
+        with self.lock:
 
-        # Se guarda el índice en local
-        self.db.save_local(self.path)
+            # Si el índice vectorial está vacío, se crea a partir de los chunks
+            # proporcionados y los embeddings
+            if self.db is None:
+                self.db = FAISS.from_documents(
+                    documents=documents,
+                    embedding=self.embeddings
+                )
+            
+            # Si no, se añaden los nuevos documentos
+            else:
+                self.db.add_documents(documents)
+
+            # Se guarda el índice en local
+            self.db.save_local(self.path)
 
         # Se recopilan cuantos chunks totales hay
         total_docs = len(self.db.index_to_docstore_id) if self.db else 0

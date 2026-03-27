@@ -61,8 +61,6 @@ class LLMService:
         # Prompt donde se le pasa el contexto y la pregunta
         prompt = f"""
         Responde a la pregunta usando SOLO el contexto proporcionado.
-        Aunque te esté mandando la consulta en español, la respuesta debe estar en inglés,
-        ya que el contexto está en inglés.
 
         Contexto:
         {context}
