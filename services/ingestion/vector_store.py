@@ -2,6 +2,7 @@
 import logging
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 from langchain_core.vectorstores import VectorStoreRetriever
 from typing import List
 
@@ -16,12 +17,13 @@ class VectorStoreService:
     Permite construir un índice vectorial a partir de chunks de texto y
     realizar recuperación semántica (retrieval) mediante embeddings.
     """
-    def __init__(self, embeddings, path: str = "faiss_index"):
+    def __init__(self, embeddings: Embeddings, path: str = "faiss_index"):
         """
-        Inicializa el servicio de vector store.
+        Inicializa el servicio de base de datos vectorial.
 
         Args:
-            embeddings: Servicio de embeddings compatible con LangChain.
+            embeddings (Embeddings): Instancia de embeddings para generar
+            vectores a partir de texto.
             path (str): Ruta donde se guarda/carga el índice FAISS.
         """
         self.embeddings = embeddings.get()
@@ -39,7 +41,8 @@ class VectorStoreService:
         # Se intenta...
         try:
 
-            # Cargar el índice desde local
+            # Cargar el índice desde local permitiendo deserialización
+            # peligrosa (para evitar errores de versión)
             db = FAISS.load_local(
                 self.path,
                 self.embeddings,
@@ -62,8 +65,14 @@ class VectorStoreService:
         Args:
             documents (List[Document]): Lista de Document de LangChain
         """
-        # Si el atributo del índice vectorial está vacío, se crea a
-        # partir de los documentos de Lnagchain
+        # Si no se proporcionan documentos, se muestra una advertencia y se
+        # sale de la función sin hacer nada
+        if not documents:
+            logger.warning("No se proporcionaron documentos para añadir.")
+            return
+
+        # Si el índice vectorial está vacío, se crea a partir de los chunks
+        # proporcionados y los embeddings
         if self.db is None:
             self.db = FAISS.from_documents(
                 documents=documents,
@@ -84,20 +93,36 @@ class VectorStoreService:
             f"TOTAL: {total_docs} chunks"
         )
     
-    def search(self, embedding, k: int = 5) -> List[Document]:
+    def search(self, query: str, k: int = 5) -> List[Document]:
         """
-        Busca los documentos más similares a un embedding dado.
-        
+        Realiza una búsqueda semántica en el índice vectorial.
+
+        Args:
+            query (str): Consulta de texto para buscar documentos relevantes.
+            k (int): Número de resultados más similares a devolver.
+
         Returns:
-            List[Document]: Documentos recuperados (con page_content y
-            metadata)
+            List[Document]: Lista de Document de LangChain más relevantes
+            según la consulta.
         """
-        # Si el atributo del índice vectorial está vacío, se eleva error
+        # Si no hay índice vectorial inicializado, se lanza una excepción
         if self.db is None:
-            raise ValueError("Vector store no inicializado")
+            raise ValueError("Vector store not initialized")
 
-        # Se buscan los documentos de langchain más similares a la consulta
-        docs = self.db.similarity_search_by_vector(embedding, k=k)
+        # Se realiza la búsqueda de similitud utilizando la búsqueda por
+        # similitud
+        return self.db.similarity_search(query, k=k)
 
-        # Devuelve dichos documentos de Langchain
-        return docs
+    def as_retriever(self, k: int = 5) -> VectorStoreRetriever:
+        """
+        Devuelve el índice vectorial como un objeto recuperador de LangChain.
+
+        Args:
+            k (int): Número de resultados más similares a devolver en cada
+            búsqueda.
+
+        Returns:
+            VectorStoreRetriever: Objeto recuperador de LangChain que utiliza
+            el índice vectorial para realizar búsquedas semánticas.
+        """
+        return self.db.as_retriever(search_kwargs={"k": k})
