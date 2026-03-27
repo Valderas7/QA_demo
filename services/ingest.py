@@ -41,16 +41,20 @@ class IngestService:
                 for i, page in enumerate(pdf.pages):
 
                     # Se extrae el texto
-                    raw_text = page.extract_text().strip()
+                    raw_text = page.extract_text()
 
                     # Si no hay texto, se muestra una advertencia y se
                     # continúa con la siguiente página
                     if not raw_text:
                         logger.warning(
                             f"La página {i + 1} del archivo '{source}' "
-                            "no contiene texto."
+                            "no contiene capa de texto (necesario OCR)."
                         )
                         continue
+                    
+                    # Se limpia el texto eliminando espacios al inicio y
+                    # al final
+                    raw_text = raw_text.strip()
 
                     # Se divide el texto y se vuelve a unir para eliminar
                     # palabras raras

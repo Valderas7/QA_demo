@@ -3,7 +3,6 @@ import logging
 from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
-from langchain_core.vectorstores import VectorStoreRetriever
 from typing import List
 
 # Logger del módulo
@@ -26,7 +25,7 @@ class VectorStoreService:
             vectores a partir de texto.
             path (str): Ruta donde se guarda/carga el índice FAISS.
         """
-        self.embeddings = embeddings.get()
+        self.embeddings = embeddings
         self.path = path
         self.db = self._load_or_create()
 
@@ -90,7 +89,7 @@ class VectorStoreService:
         total_docs = len(self.db.index_to_docstore_id) if self.db else 0
         logger.info(
             f"Índice actualizado con {len(documents)} chunks nuevos. "
-            f"TOTAL: {total_docs} chunks"
+            f"Total: {total_docs} chunks."
         )
     
     def search(self, query: str, k: int = 5) -> List[Document]:
@@ -107,22 +106,8 @@ class VectorStoreService:
         """
         # Si no hay índice vectorial inicializado, se lanza una excepción
         if self.db is None:
-            raise ValueError("Vector store not initialized")
+            raise ValueError("Vector store no inicializado.")
 
         # Se realiza la búsqueda de similitud utilizando la búsqueda por
         # similitud
         return self.db.similarity_search(query, k=k)
-
-    def as_retriever(self, k: int = 5) -> VectorStoreRetriever:
-        """
-        Devuelve el índice vectorial como un objeto recuperador de LangChain.
-
-        Args:
-            k (int): Número de resultados más similares a devolver en cada
-            búsqueda.
-
-        Returns:
-            VectorStoreRetriever: Objeto recuperador de LangChain que utiliza
-            el índice vectorial para realizar búsquedas semánticas.
-        """
-        return self.db.as_retriever(search_kwargs={"k": k})

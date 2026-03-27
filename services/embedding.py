@@ -24,7 +24,7 @@ class EmbeddingService:
             eficiente y preciso para embeddings en inglés.
         """
         self.embeddings = HuggingFaceEmbeddings(
-            model_name,
+            model_name=model_name,
             encode_kwargs={"normalize_embeddings": True}
         )
 
