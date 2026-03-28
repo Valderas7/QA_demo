@@ -4,6 +4,7 @@ import logging
 from core.dependencies import get_services, Services
 from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
 
 # Se obtiene el logger para este módulo
 logger = logging.getLogger(__name__)
@@ -24,7 +25,7 @@ router = APIRouter()
 )
 async def query(
     query: str,
-    services: Services = Depends(get_services)
+    services: Annotated[Services, Depends(get_services)]
 ):
     """
     Endpoint para hacer una consulta. El endpoint recibe una consulta de
@@ -45,7 +46,7 @@ async def query(
         # Se realiza una búsqueda semántica en la base de datos vectorial
         # obteniendo los 10 chunks más relevantes para la consulta
         docs = await run_in_threadpool(
-            services.vectorstore.search,
+            services.retrieval.search,
             query,
             10
         )

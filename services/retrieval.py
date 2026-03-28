@@ -10,7 +10,7 @@ from typing import List
 logger = logging.getLogger(__name__)
 
 
-class VectorStoreService:
+class RetrievalService:
     """
     Servicio de almacenamiento vectorial basado en FAISS.
 

@@ -3,7 +3,7 @@ from functools import lru_cache
 from services.ingest import IngestService
 from services.chunking import ChunkService
 from services.embedding import EmbeddingService
-from services.vector_store import VectorStoreService
+from services.retrieval import RetrievalService
 from services.reranker import Reranker
 from services.llm_service import LLMService
 
@@ -22,7 +22,7 @@ class Services:
         self.ingest = IngestService()
         self.chunk = ChunkService()
         self.embedding = EmbeddingService()
-        self.vectorstore = VectorStoreService(
+        self.retrieval = RetrievalService(
             embeddings=self.embedding.embeddings
         )
         self.reranker = Reranker()

@@ -4,6 +4,7 @@ from core.constants import Constants
 from core.dependencies import get_services, Services
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException
 from fastapi.concurrency import run_in_threadpool
+from typing import Annotated
 
 # Se obtiene el logger para este módulo
 logger = logging.getLogger(__name__)
@@ -24,8 +25,8 @@ router = APIRouter()
     }
 )
 async def ingest_pdf(
-    file: UploadFile = File(...),
-    services: Services = Depends(get_services)
+    file: Annotated[UploadFile, File(...)],
+    services: Annotated[Services, Depends(get_services)]
 ):
     """
     Endpoint para ingestar un PDF y crear un índice vectorial con los chunks
@@ -67,7 +68,7 @@ async def ingest_pdf(
 
         # Se guarda en la base de datos vectorial los embeddings a partir de
         # los chunks obtenidos utilizando el servicio de vector store
-        services.vectorstore.add(chunks)
+        services.retrieval.add(chunks)
 
         # Devuelve un mensaje de éxito con el número de páginas procesadas, el
         # número de chunks generados y el estado de la ingesta
