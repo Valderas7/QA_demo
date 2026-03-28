@@ -17,27 +17,32 @@ class VectorStoreService:
     Permite construir un índice vectorial a partir de chunks de texto y
     realizar recuperación semántica (retrieval) mediante embeddings.
     """
-    def __init__(self, embeddings: Embeddings, path: str = "faiss_index"):
+    def __init__(
+        self,
+        embeddings: Embeddings,
+        path: str = "faiss_index"
+    ) -> None:
         """
         Inicializa el servicio de base de datos vectorial.
 
         Args:
-            embeddings (Embeddings): Instancia de embeddings para generar
-            vectores a partir de texto.
+            embeddings (Embeddings): Instancia del servicio de embeddings
+            para generar vectores.
             path (str): Ruta donde se guarda/carga el índice FAISS.
         """
         self.embeddings = embeddings
         self.path = path
-        self.db = self._load_or_create()
+        self.db: FAISS | None = self._load_or_create()
         self.lock = threading.Lock()
 
-    def _load_or_create(self) -> FAISS:
+    def _load_or_create(self) -> FAISS | None:
         """
         Carga el índice FAISS desde disco si existe.
         Si no existe, inicializa el vector store vacío.
 
         Returns:
-            FAISS | None: Índice vectorial cargado o None si no existe.
+            FAISS | None: Instancia de FAISS cargada desde disco o
+            None si no existe.
         """
         # Se intenta...
         try:
@@ -77,7 +82,7 @@ class VectorStoreService:
         with self.lock:
 
             # Si el índice vectorial está vacío, se crea a partir de los chunks
-            # proporcionados y los embeddings
+            # y el modelo de embeddings
             if self.db is None:
                 self.db = FAISS.from_documents(
                     documents=documents,
@@ -100,7 +105,8 @@ class VectorStoreService:
     
     def search(self, query: str, k: int = 5) -> List[Document]:
         """
-        Realiza una búsqueda semántica en el índice vectorial.
+        Realiza una búsqueda semántica en el índice vectorial utilizando
+        la consulta dada.
 
         Args:
             query (str): Consulta de texto para buscar documentos relevantes.
@@ -114,6 +120,7 @@ class VectorStoreService:
         if self.db is None:
             raise ValueError("Vector store no inicializado.")
 
-        # Se realiza la búsqueda de similitud utilizando la búsqueda por
-        # similitud
+        # Se realiza la búsqueda de similitud, devolviendo los k documentos
+        # más relevantes para la consulta dada, basándose en los embeddings
+        # de la consulta y los de los documentos en el índice
         return self.db.similarity_search(query, k=k)

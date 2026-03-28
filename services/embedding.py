@@ -27,31 +27,3 @@ class EmbeddingService:
             model_name=model_name,
             encode_kwargs={"normalize_embeddings": True}
         )
-
-    def embed(self, texts: list[str]) -> list[list[float]]:
-        """
-        Genera embeddings para una lista de textos.
-
-        Args:
-            texts (list[str]): Lista de textos a convertir en embeddings.
-
-        Returns:
-            list[list[float]]: Lista de vectores de embeddings, donde cada
-            vector es una lista de floats que representa el texto en un
-            espacio semántico denso.
-        """
-        return self.embeddings.embed_documents(texts)
-
-    def embed_query(self, text: str) -> list[float]:
-        """
-        Genera embedding para una consulta de texto.
-
-        Args:
-            text (str): Texto de la consulta a convertir en embedding.
-
-        Returns:
-            list[float]: Vector de embedding que representa la consulta en
-            el mismo espacio semántico que los documentos, facilitando la
-            comparación y búsqueda semántica.
-        """
-        return self.embeddings.embed_query(text)

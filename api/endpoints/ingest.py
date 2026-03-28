@@ -12,8 +12,17 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# Endpoint para ingestar PDF y crear índice vectorial con los chunks del PDF
-@router.post("/ingest", tags=["Ingesta"])
+@router.post(
+    "/ingest",
+    tags=["Ingesta"],
+    responses={
+        200: {"description": "PDF ingestado e indexado correctamente."},
+        400: {"description": "Archivo inválido o demasiado grande."},
+        413: {"description": "Archivo demasiado grande, excede el límite."},
+        415: {"description": "Archivo no soportado, se requiere PDF."},
+        500: {"description": "Error procesando el PDF."}
+    }
+)
 async def ingest_pdf(
     file: UploadFile = File(...),
     services: Services = Depends(get_services)

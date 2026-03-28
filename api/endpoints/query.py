@@ -12,8 +12,16 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-# Endpoint para hacer consulta
-@router.post("/query", tags=["Consulta"])
+@router.post(
+    "/query",
+    tags=["Consulta"],
+    responses={
+        200: {"description": "Respuesta generada correctamente."},
+        400: {"description": "Consulta inválida."},
+        500: {"description": "Error procesando la consulta."},
+        504: {"description": "Tiempo de espera agotado para generar la respuesta."}
+    }
+)
 async def query(
     query: str,
     services: Services = Depends(get_services)
@@ -62,12 +70,12 @@ async def query(
                 query,
                 reranked
             ),
-            timeout=300
+            timeout=600
         )
 
         # Se devuelve la respuesta generada junto con las fuentes de los chunks
-        # reordenados, incluyendo la página y la fuente de cada chunk para que el
-        # usuario pueda verificar la información si lo desea
+        # reordenados, incluyendo la página y la fuente de cada chunk para que
+        # el usuario pueda verificar la información si lo desea
         return {
             "answer": answer,
             "sources": [
@@ -79,6 +87,15 @@ async def query(
                 for chunk in reranked
             ]
         }
+    
+    # Si el tiempo de espera para generar la respuesta se agota, se lanza una
+    # excepción de timeout
+    except asyncio.TimeoutError:
+        logger.error("Tiempo de espera agotado para generar la respuesta.")
+        raise HTTPException(
+            status_code=504,
+            detail="Tiempo de espera agotado para generar la respuesta"
+        )
 
     # Excepción general para capturar cualquier error que ocurra durante
     # el procesamiento de la consulta

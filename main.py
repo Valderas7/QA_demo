@@ -16,7 +16,7 @@ app = FastAPI(
     title="RAG Document QA API",
     summary=(
         "API para ingestar PDFs y responder preguntas basadas en su "
-        "contenido usando RAG"
+        "contenido usando RAG."
     ),
     description=(
         "Esta API permite ingestar documentos PDF, procesarlos para extraer "

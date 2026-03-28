@@ -1,3 +1,4 @@
+# Librerías
 import logging
 from langchain_core.documents import Document
 from sentence_transformers import CrossEncoder
@@ -27,7 +28,6 @@ class Reranker:
             model_name (str): Nombre del modelo cross-encoder.
         """
         self.model = CrossEncoder(model_name)
-        logger.info(f"Reranker inicializado con modelo: '{model_name}'.")
 
     def rerank(
         self,

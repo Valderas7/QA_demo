@@ -26,6 +26,6 @@ def setup_logging():
     # Se desactiva el logging de algunas librerías utilizadas para evitar
     # logs excesivos
     logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
-    logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+    logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
+    logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
     logging.getLogger("faiss").setLevel(logging.WARNING)
