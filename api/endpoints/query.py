@@ -72,8 +72,9 @@ async def query(
             "answer": answer,
             "sources": [
                 {
-                    "page": chunk.metadata["page"],
-                    "source": chunk.metadata["source"]
+                    "text": chunk.page_content,
+                    "source": chunk.metadata["source"],
+                    "page": chunk.metadata["page"]
                 }
                 for chunk in reranked
             ]

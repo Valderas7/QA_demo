@@ -1,5 +1,6 @@
 # Librerías
 import logging
+from core.prompts import RAGPromptTemplate
 from typing import List
 from langchain_ollama import OllamaLLM
 from langchain_core.documents import Document
@@ -58,21 +59,8 @@ class LLMService:
             for doc in docs
         ])
 
-        # Prompt donde se le pasa el contexto y la pregunta
-        prompt = f"""
-        Responde a la pregunta usando SOLO el contexto proporcionado.
-
-        Contexto:
-        {context}
-
-        Pregunta:
-        {query}
-
-        Instrucciones:
-        - Responde de forma clara y precisa.
-        - Cita siempre la fuente y número de página.
-        - Si la información no está en el contexto, responde: "No encontrado".
-        """
+        # Se genera el prompt a partir del contexto y la consulta
+        prompt = RAGPromptTemplate.generate_prompt(context, query)
 
         # Se intenta invocar al modelo
         try:
