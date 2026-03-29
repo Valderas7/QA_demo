@@ -8,7 +8,7 @@ from typing import Any, List, Dict
 logger = logging.getLogger(__name__)
 
 
-class IngestService:
+class IngestionService:
     """Clase para ingestar PDFs"""
 
     def load_pdf(self, file: bytes, source: str) -> List[Dict[str, Any]]:

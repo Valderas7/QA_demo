@@ -2,6 +2,7 @@
 import asyncio
 import logging
 from core.dependencies import get_services, Services
+from core.exceptions import VectorStoreNotInitializedError
 from fastapi.concurrency import run_in_threadpool
 from fastapi import APIRouter, Depends, HTTPException
 from typing import Annotated
@@ -46,7 +47,7 @@ async def query(
         # Se realiza una búsqueda semántica en la base de datos vectorial
         # obteniendo los 10 chunks más relevantes para la consulta
         docs = await run_in_threadpool(
-            services.retrieval.search,
+            services.retrieval.similarity_search,
             query,
             10
         )
@@ -97,6 +98,16 @@ async def query(
             status_code=504,
             detail="Tiempo de espera agotado para generar la respuesta"
         )
+
+    # Si se intenta hacer una consulta sin que el índice vectorial esté
+    # inicializado, se lanza una excepción específica indicando que el
+    # índice no está listo
+    except VectorStoreNotInitializedError as e:
+        logger.exception("Intento de consulta sin índice.")
+        raise HTTPException(
+            status_code=400,
+            detail="El índice vectorial no está inicializado"
+        ) from e
 
     # Excepción general para capturar cualquier error que ocurra durante
     # el procesamiento de la consulta

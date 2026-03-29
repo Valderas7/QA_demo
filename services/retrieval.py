@@ -1,9 +1,12 @@
 # Librerías
 import logging
 import threading
-from langchain_community.vectorstores import FAISS
+from core.exceptions import VectorStoreNotInitializedError
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
+from langchain_qdrant import QdrantVectorStore
+from qdrant_client import QdrantClient
+from qdrant_client.models import VectorParams, Distance
 from typing import List
 
 # Logger del módulo
@@ -12,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 class RetrievalService:
     """
-    Servicio de almacenamiento vectorial basado en FAISS.
+    Servicio de almacenamiento vectorial basado en Qdrant (local persistente).
 
     Permite construir un índice vectorial a partir de chunks de texto y
     realizar recuperación semántica (retrieval) mediante embeddings.
@@ -20,7 +23,7 @@ class RetrievalService:
     def __init__(
         self,
         embeddings: Embeddings,
-        path: str = "faiss_index"
+        path: str = "qdrant_db"
     ) -> None:
         """
         Inicializa el servicio de base de datos vectorial.
@@ -28,45 +31,69 @@ class RetrievalService:
         Args:
             embeddings (Embeddings): Instancia del servicio de embeddings
             para generar vectores.
-            path (str): Ruta donde se guarda/carga el índice FAISS.
+            path (str): Ruta donde se almacenará la base de datos vectorial
+            de Qdrant.
         """
+        # Inicializa los atributos del servicio
         self.embeddings = embeddings
         self.path = path
-        self.db: FAISS | None = self._load_or_create()
+        self.collection_name = "qa_demo"
+        self.client = QdrantClient(path=self.path)
+        self.db: QdrantVectorStore | None = self._load_vectorstore()
         self.lock = threading.Lock()
 
-    def _load_or_create(self) -> FAISS | None:
+    def _load_vectorstore(self) -> QdrantVectorStore | None:
         """
-        Carga el índice FAISS desde disco si existe.
-        Si no existe, inicializa el vector store vacío.
+        Carga la colección de Qdrant si existe.
+        Si no existe, devuelve None y se creará una nueva colección al
+        añadir documentos.
 
         Returns:
-            FAISS | None: Instancia de FAISS cargada desde disco o
-            None si no existe.
+            QdrantVectorStore | None: Instancia de QdrantVectorStore
+            si se cargó correctamente, o None si no existe índice previo.
         """
         # Se intenta...
         try:
+            
+            # Se obtienen las colecciones existentes en Qdrant
+            collections = self.client.get_collections().collections
 
-            # Cargar el índice desde local permitiendo deserialización
-            # peligrosa (para evitar errores de versión)
-            db = FAISS.load_local(
-                self.path,
-                self.embeddings,
-                allow_dangerous_deserialization=True
-            )
-            logger.info("FAISS cargado desde disco.")
-
-            # Se devuelve el índice vectorial
-            return db
+            # Si alguna de las colecciones tiene el mismo nombre que la
+            # colección que se quiere usar, se carga esa colección y se
+            # devuelve la instancia de QdrantVectorStore para interactuar
+            # con ella
+            if any(coll.name == self.collection_name for coll in collections):
+                logger.info(
+                    f"Colección '{self.collection_name}' ya existe en Qdrant."
+                )
+                return QdrantVectorStore(
+                    client=self.client,
+                    collection_name=self.collection_name,
+                    embedding=self.embeddings,
+                )
+        
+            # Si no, no se retorna nada
+            else:
+                logger.info(
+                    f"Colección '{self.collection_name}' no encontrada "
+                    "en Qdrant."
+                )
+                return None
 
         # Si ocurre excepción, no se devuelve nada
         except Exception:
-            logger.info("No existe índice, creando uno nuevo.")
+            logger.info(
+                "No existe índice Qdrant. Se creará uno nuevo al "
+                "añadir documentos."
+            )
             return None
 
-    def add(self, documents: List[Document]) -> None:
+    def add_documents(self, documents: List[Document]) -> None:
         """
-        Añade nuevos documentos al índice vectorial.
+        Añade nuevos documentos al índice vectorial de Qdrant. Si el índice
+        no existe, se crea una nueva colección con la configuración adecuada
+        para almacenar los vectores generados a partir de los documentos
+        utilizando los embeddings.
         
         Args:
             documents (List[Document]): Lista de Document de LangChain
@@ -81,29 +108,49 @@ class RetrievalService:
         # modificar el índice a la vez, evitando problemas de concurrencia
         with self.lock:
 
-            # Si el índice vectorial está vacío, se crea a partir de los chunks
-            # y el modelo de embeddings
+            # Si el atributo 'db' es None, significa que no se ha inicializado
+            # un índice
             if self.db is None:
-                self.db = FAISS.from_documents(
-                    documents=documents,
-                    embedding=self.embeddings
+                
+                # Si la colección no existe en Qdrant...
+                if not self.client.collection_exists(self.collection_name):
+                    
+                    # Se calcula el tamaño de los vectores a partir de los
+                    # embeddings para configurar la colección correctamente
+                    vector_size = len(self.embeddings.embed_query("test"))
+
+                    # Se crea la colección en Qdrant con el nombre
+                    # especificado y la configuración de vectores adecuada
+                    # (tamaño y distancia)
+                    self.client.create_collection(
+                        collection_name=self.collection_name,
+                        vectors_config=VectorParams(
+                            size=vector_size,
+                            distance=Distance.COSINE,
+                        ),
+                    )
+
+                # Se inicializa el atributo 'db' con una nueva instancia del
+                # índice vectorial de Qdrant, apuntando a la colección recién
+                # creada
+                self.db = QdrantVectorStore(
+                    client=self.client,
+                    collection_name=self.collection_name,
+                    embedding=self.embeddings,
                 )
             
-            # Si no, se añaden los nuevos documentos
-            else:
-                self.db.add_documents(documents)
+            # Se añaden los documentos al índice vectorial
+            self.db.add_documents(documents)
 
-            # Se guarda el índice en local
-            self.db.save_local(self.path)
-
-        # Se recopilan cuantos chunks totales hay
-        total_docs = len(self.db.index_to_docstore_id) if self.db else 0
+        # Se muestra un log con el número de chunks añadidos y el total de
+        # chunks en el índice después de la actualización
+        total_docs = self.client.count(self.collection_name).count
         logger.info(
-            f"Índice actualizado con {len(documents)} chunks nuevos. "
+            f"Qdrant actualizado con {len(documents)} chunks nuevos. "
             f"Total: {total_docs} chunks."
         )
     
-    def search(self, query: str, k: int = 5) -> List[Document]:
+    def similarity_search(self, query: str, k: int = 5) -> List[Document]:
         """
         Realiza una búsqueda semántica en el índice vectorial utilizando
         la consulta dada.
@@ -118,7 +165,9 @@ class RetrievalService:
         """
         # Si no hay índice vectorial inicializado, se lanza una excepción
         if self.db is None:
-            raise ValueError("Vector store no inicializado.")
+            raise VectorStoreNotInitializedError(
+                "El índice vectorial no está inicializado."
+            )
 
         # Se realiza la búsqueda de similitud, devolviendo los k documentos
         # más relevantes para la consulta dada, basándose en los embeddings

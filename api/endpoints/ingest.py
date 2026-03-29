@@ -37,53 +37,74 @@ async def ingest_pdf(
     # Se intenta...
     try:
 
+        # Se lee el contenido del archivo PDF
+        content = await file.read()
+
         # Se valida que el archivo sea un PDF
-        if not file.filename.endswith(".pdf"):
+        if (
+            file.content_type != Constants.PDF_CONTENT_TYPE
+            or not content.startswith(b"%PDF")
+        ):
             logger.error("El archivo subido no es un PDF: %s", file.filename)
             raise HTTPException(
                 status_code=415,
                 detail="Solo se permiten archivos PDF"
             )
-        
-        # Se lee el contenido del archivo PDF
-        content = await file.read()
 
         # Si el archivo es demasiado grande, se lanza una excepción para evitar
         # problemas de rendimiento o seguridad
         if len(content) > Constants.MAX_FILE_SIZE:
-            logger.error("El PDF es demasiado grande.")
-            raise HTTPException(413, "Archivo demasiado grande")
+            logger.error(
+                "PDF demasiado grande: %s (%d bytes)",
+                file.filename,
+                len(content)
+            )
+            raise HTTPException(
+                status_code=413,
+                detail="Archivo demasiado grande"
+            )
 
         # Se llama al método para ingestar PDFs, obteniendo una lista de
         # páginas con su texto limpio y metadatos de página y fuente
         pages = await run_in_threadpool(
-            services.ingest.load_pdf,
+            services.ingestion.load_pdf,
             content,
             file.filename
         )
 
         # Se fragmenta el texto del PDF en chunks utilizando el servicio de
         # chunking, obteniendo una lista de Documentos de Langchain
-        chunks = services.chunk.chunk_text(pages)
+        chunks = await run_in_threadpool(
+            services.chunking.chunk_text,
+            pages
+        )
 
         # Se guarda en la base de datos vectorial los embeddings a partir de
         # los chunks obtenidos utilizando el servicio de vector store
-        services.retrieval.add(chunks)
+        await run_in_threadpool(
+            services.retrieval.add_documents,
+            chunks
+        )
 
         # Devuelve un mensaje de éxito con el número de páginas procesadas, el
         # número de chunks generados y el estado de la ingesta
         return {
             "pages": len(pages),
             "chunks": len(chunks),
-            "status": "indexado correctamente"
+            "status": "indexado"
         }
 
-    # Excepción
-    except Exception as e:
+    # Si se lanza una excepción HTTP, se vuelve a lanzar para que FastAPI
+    # devuelva la respuesta adecuada al cliente
+    except HTTPException:
+        raise
+
+    # Excepción genérica
+    except Exception:
         logger.exception("Error ingestando el documento.")
         raise HTTPException(
             status_code=500,
-            detail=f"Error procesando PDF: {str(e)}"
+            detail="Error procesando el PDF"
         )
 
 
