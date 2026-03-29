@@ -1,5 +1,6 @@
 # Librerías
 import logging
+import uuid
 import tiktoken
 from functools import lru_cache
 from langchain_core.documents import Document
@@ -10,7 +11,21 @@ from typing import List, Dict
 logger = logging.getLogger(__name__)
 
 
-class ChunkService:
+@lru_cache(maxsize=8)
+def get_encoder(model_name: str):
+    """
+    Obtiene un encoder de tokens para el modelo especificado. Se cachea para
+    evitar crear múltiples instancias del encoder, lo que puede ser costoso en
+    términos de memoria y rendimiento.
+
+    Args:
+        model_name (str): Nombre del modelo para el cual se desea obtener el
+        encoder.
+    """
+    return tiktoken.encoding_for_model(model_name)
+
+
+class ChunkingService:
     """
     Servicio de chunking. Divide texto en chunks utilizando un splitter
     recursivo basado en caracteres, pero con conteo de tokens real
@@ -23,16 +38,16 @@ class ChunkService:
             model_name (str): Modelo usado para definir tokenización.
         """
         self.model_name = model_name
-        self.encoder = tiktoken.encoding_for_model(model_name)
+        self.encoder = get_encoder(model_name)
 
-    @lru_cache(maxsize=10000)
     def _count_tokens(self, text: str) -> int:
         """
-        Cuenta el número de tokens en un texto. Se cachea para mejorar
-        rendimiento en textos repetidos, recordando hasta 10000 entradas.
+        Cuenta el número de tokens en un texto utilizando el encoder. Esto
+        permite que el chunking se base en tokens reales en lugar de
+        caracteres.
 
         Args:
-            text (str): Texto a tokenizar.
+            text (str): Texto para contar tokens.
 
         Returns:
             int: Número de tokens en el texto.
@@ -124,11 +139,14 @@ class ChunkService:
         # Lista vacía para almacenar los chunks generados
         chunks: List[Document] = []
 
-        # Para cada diccionario en la lista de páginas...
+        # Para cada página en la lista de páginas del documento...
         for page in pages:
             
-            # Se obtiene el texto de la página del PDF
-            text = page.get("text")
+            # Se extrae el nombre, el número y el texto de la
+            # página del documento
+            source = page.get("source")
+            page_num = page.get("page")
+            text = page.get("text") or ""
 
             # Si no hay texto en la página, se continúa con la siguiente
             # página
@@ -139,25 +157,32 @@ class ChunkService:
             split_texts = splitter.split_text(text)
 
             # Para cada índice local y fragmento de texto...
-            for local_id, split_text in enumerate(split_texts):
+            for index, split_text in enumerate(split_texts):
                 
                 # Si el chunk tiene menos de 20 tokens, se considera pequeño y
                 # se omite para evitar generar chunks irrelevantes
                 if self._count_tokens(split_text) < 20:
                     continue
                 
-                # Se genera un ID único para el chunk combinando la fuente,
-                # el número de página y un ID local del chunk
-                chunk_id = f"{page['source']}_p{page['page']}_c{local_id}"
+                # Se genera un ID único para el chunk utilizando UUID5, basado
+                # en el nombre del documento, página del documento y el texto
+                # del chunk para asegurar trazabilidad y evitar colisiones
+                chunk_id = str(
+                    uuid.uuid5(
+                        uuid.NAMESPACE_DNS,
+                        f"{source}|{page_num}|{index}"
+                    )
+                )
 
                 # Se añade a la lista un Documento con el texto como contenido
-                # y los metadatos de página, fuente e ID
+                # y los metadatos de página, archivo fuente y ID del chunk
+                # para trazabilidad
                 chunks.append(
                     Document(
                         page_content=split_text,
                         metadata={
-                            "page": page.get("page"),
-                            "source": page.get("source"),
+                            "page": page_num,
+                            "source": source,
                             "chunk_id": chunk_id
                         }
                     )

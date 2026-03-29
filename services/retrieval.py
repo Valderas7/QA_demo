@@ -117,7 +117,9 @@ class RetrievalService:
                     
                     # Se calcula el tamaño de los vectores a partir de los
                     # embeddings para configurar la colección correctamente
-                    vector_size = len(self.embeddings.embed_query("test"))
+                    vector_size = (
+                        self.embeddings.client.get_sentence_embedding_dimension()
+                        )
 
                     # Se crea la colección en Qdrant con el nombre
                     # especificado y la configuración de vectores adecuada

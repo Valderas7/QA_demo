@@ -1,7 +1,7 @@
 # Librerías
 from functools import lru_cache
 from services.ingestion import IngestionService
-from services.chunking import ChunkService
+from services.chunking import ChunkingService
 from services.embedding import EmbeddingService
 from services.retrieval import RetrievalService
 from services.reranker import Reranker
@@ -20,7 +20,7 @@ class Services:
         Inicializa todos los servicios necesarios para el pipeline RAG.
         """
         self.ingestion = IngestionService()
-        self.chunking = ChunkService()
+        self.chunking = ChunkingService()
         self.embedding = EmbeddingService()
         self.retrieval = RetrievalService(
             embeddings=self.embedding.embeddings
