@@ -8,7 +8,7 @@ from typing import List
 logger = logging.getLogger(__name__)
 
 
-class Reranker:
+class RerankerService:
     """
     Servicio de re-ranking basado en cross-encoder.
 

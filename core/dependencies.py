@@ -1,11 +1,13 @@
 # Librerías
 from functools import lru_cache
-from services.ingestion import IngestionService
 from services.chunking import ChunkingService
 from services.embedding import EmbeddingService
-from services.retrieval import RetrievalService
-from services.reranker import Reranker
+from services.search.hybrid import HybridSearchService
+from services.ingestion import IngestionService
+from services.search.lexical import LexicalSearchService
 from services.llm_service import LLMService
+from services.reranker import RerankerService
+from services.search.semantic import SemanticSearchService
 
 
 class Services:
@@ -22,10 +24,15 @@ class Services:
         self.ingestion = IngestionService()
         self.chunking = ChunkingService()
         self.embedding = EmbeddingService()
-        self.retrieval = RetrievalService(
+        self.semantic_search = SemanticSearchService(
             embeddings=self.embedding.embeddings
         )
-        self.reranker = Reranker()
+        self.lexical_search = LexicalSearchService()
+        self.hybrid_retriever = HybridSearchService(
+            semantic_search=self.semantic_search,
+            lexical_search=self.lexical_search
+        )
+        self.reranker = RerankerService()
         self.llm = LLMService()
 
 

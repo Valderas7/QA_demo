@@ -82,7 +82,14 @@ async def ingest_pdf(
         # Se guarda en la base de datos vectorial los embeddings a partir de
         # los chunks obtenidos utilizando el servicio de vector store
         await run_in_threadpool(
-            services.retrieval.add_documents,
+            services.semantic_search.add_documents,
+            chunks
+        )
+
+        # Se guarda en el índice BM25 los chunks obtenidos utilizando el
+        # servicio de búsqueda léxica
+        await run_in_threadpool(
+            services.lexical_search.add_documents,
             chunks
         )
 

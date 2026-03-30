@@ -5,6 +5,7 @@ from core.exceptions import VectorStoreNotInitializedError
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 from langchain_qdrant import QdrantVectorStore
+from pathlib import Path
 from qdrant_client import QdrantClient
 from qdrant_client.models import VectorParams, Distance
 from typing import List
@@ -13,7 +14,7 @@ from typing import List
 logger = logging.getLogger(__name__)
 
 
-class RetrievalService:
+class SemanticSearchService:
     """
     Servicio de almacenamiento vectorial basado en Qdrant (local persistente).
 
@@ -36,7 +37,7 @@ class RetrievalService:
         """
         # Inicializa los atributos del servicio
         self.embeddings = embeddings
-        self.path = path
+        self.path = Path(path)
         self.collection_name = "qa_demo"
         self.client = QdrantClient(path=self.path)
         self.db: QdrantVectorStore | None = self._load_vectorstore()
@@ -63,9 +64,7 @@ class RetrievalService:
             # devuelve la instancia de QdrantVectorStore para interactuar
             # con ella
             if any(coll.name == self.collection_name for coll in collections):
-                logger.info(
-                    f"Colección '{self.collection_name}' ya existe en Qdrant."
-                )
+                logger.info(f"Colección '{self.collection_name}' cargada.")
                 return QdrantVectorStore(
                     client=self.client,
                     collection_name=self.collection_name,
@@ -74,16 +73,13 @@ class RetrievalService:
         
             # Si no, no se retorna nada
             else:
-                logger.info(
-                    f"Colección '{self.collection_name}' no encontrada "
-                    "en Qdrant."
-                )
+                logger.info(f"Colección '{self.collection_name}' no existe.")
                 return None
 
         # Si ocurre excepción, no se devuelve nada
         except Exception:
             logger.info(
-                "No existe índice Qdrant. Se creará uno nuevo al "
+                "No existe índice en Qdrant. Se creará uno nuevo al "
                 "añadir documentos."
             )
             return None
@@ -118,12 +114,12 @@ class RetrievalService:
                     # Se calcula el tamaño de los vectores a partir de los
                     # embeddings para configurar la colección correctamente
                     vector_size = (
-                        self.embeddings.client.get_sentence_embedding_dimension()
+                        len(self.embeddings.embed_query("test"))
                         )
 
                     # Se crea la colección en Qdrant con el nombre
                     # especificado y la configuración de vectores adecuada
-                    # (tamaño y distancia)
+                    # (tamaño y distancia de similitud)
                     self.client.create_collection(
                         collection_name=self.collection_name,
                         vectors_config=VectorParams(
@@ -146,13 +142,12 @@ class RetrievalService:
 
         # Se muestra un log con el número de chunks añadidos y el total de
         # chunks en el índice después de la actualización
-        total_docs = self.client.count(self.collection_name).count
+        total = self.client.count(self.collection_name).count
         logger.info(
-            f"Qdrant actualizado con {len(documents)} chunks nuevos. "
-            f"Total: {total_docs} chunks."
+            f"Qdrant actualizado: +{len(documents)} chunks | Total: {total}"
         )
     
-    def similarity_search(self, query: str, k: int = 5) -> List[Document]:
+    def similarity_search(self, query: str, k: int = 20) -> List[Document]:
         """
         Realiza una búsqueda semántica en el índice vectorial utilizando
         la consulta dada.

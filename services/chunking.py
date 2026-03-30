@@ -30,7 +30,7 @@ class ChunkingService:
     Servicio de chunking. Divide texto en chunks utilizando un splitter
     recursivo basado en caracteres, pero con conteo de tokens real
     mediante tiktoken."""
-    def __init__(self, model_name: str = "gpt-4o-mini"):
+    def __init__(self, model_name: str = "gpt-4o-mini") -> None:
         """
         Inicializa el encoder de tokens según el modelo seleccionado.
 

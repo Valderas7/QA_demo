@@ -47,7 +47,7 @@ async def query(
         # Se realiza una búsqueda semántica en la base de datos vectorial
         # obteniendo los 10 chunks más relevantes para la consulta
         docs = await run_in_threadpool(
-            services.retrieval.similarity_search,
+            services.hybrid_retriever.retrieve,
             query,
             10
         )
