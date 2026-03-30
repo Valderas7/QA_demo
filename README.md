@@ -8,20 +8,23 @@ Esta API permite ingestar documentos PDF, procesarlos en chunks, almacenarlos en
 
 ## Características
 
-- **Ingesta de PDFs**: Carga y procesa documentos PDF
-- **Chunking inteligente**: División del texto en fragmentos manejables
+- **Ingesta de PDFs**: Carga y procesa documentos PDF con detección automática de duplicados
+- **Chunking inteligente**: División del texto en fragmentos semánticamente coherentes
 - **Embeddings**: Generación de vectores semánticos con modelos de HuggingFace
-- **Búsqueda vectorial**: Recuperación eficiente con FAISS
-- **Re-ranking**: Mejora de la relevancia de los resultados
+- **Búsqueda Híbrida**: Combinación de búsqueda vectorial semántica (Qdrant) y léxica (BM25) para máxima precisión
+- **Re-ranking**: Mejora de la relevancia de los resultados antes de la generación
 - **Generación de respuestas**: LLM local con Ollama para respuestas contextualizadas
+- **Timeout de seguridad**: Límite de 5 minutos por consulta para evitar cuelgues
 - **API REST**: Interfaz sencilla con FastAPI
 - **Logging estructurado**: Seguimiento detallado de operaciones
+- **Deduplicación de documentos**: Evita indexar documentos duplicados automáticamente
 
 ## Tecnologías
 
 - **FastAPI**: Framework web moderno y rápido
 - **LangChain**: Framework para aplicaciones con LLMs
-- **FAISS**: Búsqueda de similitud vectorial eficiente
+- **Qdrant**: Base de datos vectorial con persistencia
+- **BM25**: Búsqueda léxica eficiente (índice invertido)
 - **Sentence Transformers**: Modelos de embedding
 - **Ollama**: Servidor de LLMs local
 - **PDFPlumber**: Extracción de texto de PDFs
@@ -31,7 +34,7 @@ Esta API permite ingestar documentos PDF, procesarlos en chunks, almacenarlos en
 
 ### Requisitos previos
 
-- Python 3.8+
+- Python 3.11+
 - [Ollama](https://ollama.ai/) instalado y ejecutándose
 
 ### Pasos de instalación
@@ -75,29 +78,28 @@ La API estará disponible en `http://localhost:8000`
 
 2. **Ingestar PDFs de la carpeta data/pdfs**
 
-Antes de poder realizar consultas, debes ingestar todos los PDFs disponibles en `data/pdfs/`. Esto construirá y ampliará el índice vectorial.
+Antes de poder realizar consultas, debes ingestar todos los PDFs disponibles en `data/pdfs/`. El sistema indexa automáticamente los documentos en la búsqueda semántica y léxica.
 
 Puedes hacerlo desde la documentación interactiva (`/docs`) o con curl:
 
 ```bash
-# Ejemplo: ingestar cada PDF de la carpeta
+# Ejemplo: ingestar un PDF
 curl -X POST "http://localhost:8000/ingest" \
-  -F "file=@data/pdfs/documento1.pdf"
-
-curl -X POST "http://localhost:8000/ingest" \
-  -F "file=@data/pdfs/documento2.pdf"
+  -F "file=@data/pdfs/documento.pdf"
 
 # Repite para cada PDF en la carpeta
 ```
 
-**Nota importante:** Cada PDF ingresado amplía el índice vectorial existente. Ingesta todos los documentos relevantes antes de comenzar a hacer consultas.
+**Nota importante:** El sistema detecta automáticamente si un documento ya está indexado y evita duplicados. Cada PDF ingresado amplía el índice vectorial e índice léxico (BM25) existente.
 
 3. **Realizar consultas**
 
 Una vez ingresados los PDFs, ya puedes hacer consultas sobre el contenido desde `/docs` o con curl:
 
 ```bash
-curl -X GET "http://localhost:8000/query?q=Tu pregunta aquí"
+curl -X POST "http://localhost:8000/query" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "query=Tu pregunta aquí"
 ```
 
 ### Endpoints
@@ -106,7 +108,7 @@ curl -X GET "http://localhost:8000/query?q=Tu pregunta aquí"
 
 **POST** `/ingest`
 
-Sube un documento PDF para procesarlo e indexarlo.
+Sube un documento PDF para procesarlo e indexarlo en los índices semántico y léxico.
 
 **Parámetros:**
 - `file`: Archivo PDF (multipart/form-data)
@@ -119,46 +121,64 @@ curl -X POST "http://localhost:8000/ingest" \
   -F "file=@documento.pdf"
 ```
 
-**Respuesta:**
+**Respuesta (documento nuevo):**
 ```json
 {
-  "message": "Documento ingerido correctamente",
-  "file": "documento.pdf",
-  "chunks": 42
+  "pages": 10,
+  "chunks": 42,
+  "status": "Indexado"
+}
+```
+
+**Respuesta (documento ya existente):**
+```json
+{
+  "status": "Ya indexado",
+  "message": "El documento 'documento.pdf' ya existe en el índice.",
+  "pages": 0,
+  "chunks": 0
 }
 ```
 
 #### 2. Realizar consulta
 
-**GET** `/query`
+**POST** `/query`
 
-Realiza una consulta en lenguaje natural sobre los documentos indexados.
+Realiza una consulta en lenguaje natural sobre los documentos indexados usando búsqueda híbrida (semántica + léxica).
 
-**Parámetros:**
-- `q`: Consulta en lenguaje natural (requerido)
-- `top_k`: Número de documentos a recuperar antes del reranking (default: 5)
-- `rerank_top_k`: Número de documentos finales tras reranking (default: 3)
+**Parámetros (form-data):**
+- `query`: Consulta en lenguaje natural (requerido)
 
 **Ejemplo con curl:**
 ```bash
-curl -X GET "http://localhost:8000/query?q=¿Cuál es el tema principal del documento?&top_k=5&rerank_top_k=3"
+curl -X POST "http://localhost:8000/query" \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "query=¿Cuál es el tema principal del documento?"
 ```
 
 **Respuesta:**
 ```json
 {
-  "query": "¿Cuál es el tema principal del documento?",
-  "response": "El tema principal del documento es...",
-  "documents": [
+  "answer": "El tema principal del documento es...",
+  "sources": [
     {
       "text": "Fragmento relevante del documento...",
       "source": "documento.pdf",
-      "page": 1,
-      "chunk_id": "doc_0_chunk_0"
+      "page": 1
+    },
+    {
+      "text": "Otro fragmento relevante...",
+      "source": "documento.pdf",
+      "page": 5
     }
   ]
 }
 ```
+
+**Notas:**
+- El timeout máximo para generar una respuesta es de 5 minutos
+- La búsqueda híbrida combina resultados semánticos (vectoriales) y léxicos para mayor precisión
+- Los chunks se reordenan automáticamente usando un modelo de re-ranking antes de generar la respuesta
 
 ## Estructura del proyecto
 
@@ -185,11 +205,11 @@ QA_demo/
 │   ├── reranker.py        # Servicio de re-ranking de resultados
 │   └── search/
 │       ├── hybrid.py      # Búsqueda híbrida (semántica + léxica)
-│       ├── lexical.py     # Búsqueda léxica
-│       └── semantic.py    # Búsqueda semántica vectorial
+│       ├── lexical.py     # Búsqueda léxica (BM25)
+│       └── semantic.py    # Búsqueda semántica vectorial (Qdrant)
 ├── data/
 │   ├── pdfs/              # Directorio para almacenar PDFs
-│   ├── qdrant_db/         # Base de datos vectorial Qdrant
+│   ├── qdrant_db/         # Base de datos vectorial Qdrant (persistencia)
 │   └── eval/              # Datos de evaluación
 │       ├── eval.jsonl     # Conjunto de evaluación en formato JSONL
 │       └── responses/     # Respuestas generadas por el RAG
@@ -237,19 +257,31 @@ El sistema implementa un pipeline RAG completo que combina recuperación de info
 
 2. **Embedding y Búsqueda Vectorial**
    - **Sentence Transformers**: Modelos pre-entrenados de HuggingFace para generar embeddings de alta calidad
-   - **Qdrant**: Base de datos vectorial eficiente con búsqueda por similitud, almacenamiento persistente y bajo overhead de latencia
-   - **Búsqueda Híbrida**: Combinación de búsqueda semántica (vectorial) y léxica para mejorar la recuperación de documentos relevantes
+   - **Qdrant**: Base de datos vectorial eficiente con búsqueda por similitud, almacenamiento persistente en disco (`data/qdrant_db/`) y bajo overhead de latencia
+   - **BM25 (Búsqueda Léxica)**: Índice de recuperación de información basado en frecuencia de términos para búsqueda exacta y por palabra clave
+   - **Búsqueda Híbrida**: Combinación inteligente de resultados de búsqueda semántica (Qdrant) y léxica (BM25) para maximizar precisión y recall en la recuperación de documentos
 
 3. **Re-ranking**
    - Capa adicional de refinamiento tras la recuperación inicial, ya que evalúa cada par (query, documento) de forma conjunta, mejorando la relevancia de los documentos seleccionados antes de la generación
    - Reduce el ruido y falsos positivos en el contexto enviado al LLM
+   - Se aplica automáticamente con los 3 mejores documentos tras la búsqueda híbrida
 
-4. **Modelo de Lenguaje**
+4. **Deduplicación de Documentos**
+   - El sistema detecta automáticamente si un documento ya ha sido indexado en ambos servicios (semántico y léxico)
+   - Evita procesar y almacenar duplicados, ahorrando espacio y tiempo de indexación
+   - Mantiene la integridad del índice sin duplicados
+
+5. **Timeout de Seguridad**
+   - Límite máximo de 5 minutos (300 segundos) por consulta para evitar que el proceso se cuelgue indefinidamente
+   - Devuelve error 504 (Gateway Timeout) si se excede el tiempo límite
+   - Essential para mantener la disponibilidad de la API en producción
+
+6. **Modelo de Lenguaje**
    - **Ollama con gemma2:2b**
    - Ventaja: Modelo ligero (2B parámetros) ejecutado localmente sin dependencias externas
    - Desventaja: Menor capacidad comparado con modelos más grandes (7B+)
 
-5. **Framework y API**
+7. **Framework y API**
    - **LangChain**: Abstracción de alto nivel para pipelines LLM
    - **FastAPI**: Framework moderno con validación automática (Pydantic), documentación OpenAPI y alto rendimiento
    - **Arquitectura modular**: Separación clara entre servicios (ingesta, query, embeddings, etc.)
