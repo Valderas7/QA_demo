@@ -63,13 +63,41 @@ async def ingest_pdf(
                 status_code=413,
                 detail="Archivo demasiado grande"
             )
+        
+        # Se almacena el nombre del documento de la petición
+        source = file.filename
+
+        # Comprobamos en ambos servicios
+        already_in_semantic = await run_in_threadpool(
+            services.semantic_search.has_source,
+            source
+        )
+        already_in_lexical = await run_in_threadpool(
+            services.lexical_search.has_source,
+            source
+        )
+
+        # Si el PDF ya existe completamente indexado en ambos servicios...
+        if already_in_semantic and already_in_lexical:
+
+            # Se omite la ingesta
+            logger.info(f"El PDF '{source}' ya estaba indexado. Se omite.")
+            return {
+                "status": "ya_indexado",
+                "message": f"El documento '{source}' ya existe en el índice.",
+                "pages": 0,
+                "chunks": 0
+            }
+
+        # Mensaje de información
+        logger.info(f"Indexando nuevo PDF: '{source}'.")
 
         # Se llama al método para ingestar PDFs, obteniendo una lista de
         # páginas con su texto limpio y metadatos de página y fuente
         pages = await run_in_threadpool(
             services.ingestion.load_pdf,
             content,
-            file.filename
+            source
         )
 
         # Se fragmenta el texto del PDF en chunks utilizando el servicio de
@@ -82,14 +110,14 @@ async def ingest_pdf(
         # Se guarda en la base de datos vectorial los embeddings a partir de
         # los chunks obtenidos utilizando el servicio de vector store
         await run_in_threadpool(
-            services.semantic_search.add_documents,
+            services.semantic_search.add_chunks,
             chunks
         )
 
         # Se guarda en el índice BM25 los chunks obtenidos utilizando el
         # servicio de búsqueda léxica
         await run_in_threadpool(
-            services.lexical_search.add_documents,
+            services.lexical_search.add_chunks,
             chunks
         )
 

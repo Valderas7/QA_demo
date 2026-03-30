@@ -16,7 +16,7 @@ class LexicalSearchService:
     """
     Servicio de recuperación basado en BM25. Permite indexar documentos y
     realizar búsquedas."""
-    def __init__(self, index_path: str = "bm25_index.pkl") -> None:
+    def __init__(self, index_path: str = "data/bm25_index.pkl") -> None:
         """
         Inicializa el servicio de recuperación BM25.
 
@@ -28,6 +28,7 @@ class LexicalSearchService:
         self.documents: List[Document] = []
         self.tokenized_corpus: List[List[str]] = []
         self.index_path = Path(index_path)
+        self.sources: set[str] = set()
         self._load_index()
 
     def _tokenize(self, text: str) -> List[str]:
@@ -62,7 +63,8 @@ class LexicalSearchService:
                     data = pickle.load(f)
                     self.documents = data["documents"]
                     self.tokenized_corpus = data["tokenized_corpus"]
-                    self.bm25 = BM25Okapi(self.tokenized_corpus)
+                    self.sources = data.get("sources", set())
+                    self.bm25 = BM25Okapi(self.tokenized_corpus) if self.tokenized_corpus else None
                 logger.info(
                     f"Índice BM25 cargado desde disco: {len(self.documents)} "
                     "documentos."
@@ -71,15 +73,13 @@ class LexicalSearchService:
             # Si hay excepción al cargar el índice, el atributo sigue vacío
             except Exception as e:
                 logger.error(f"Error al cargar el índice BM25: {e}")
-                self.bm25 = None
         
         # Si en cambio no existe el índice, se loggea
         else:
             logger.info(
                 "No existe índice BM25 en disco. Se inicializará al "
-                "agregar documentos."
+                "añadir documentos."
             )
-            self.bm25 = None
 
     def _save_index(self) -> None:
         """Guarda el índice BM25 en disco."""
@@ -98,53 +98,113 @@ class LexicalSearchService:
                 pickle.dump({
                     "documents": self.documents,
                     "tokenized_corpus": self.tokenized_corpus,
+                    "sources": self.sources
                 }, f)
 
         # Si hay excepción al guardar el índice, se loggea el error
         except Exception:
             logger.exception("Error guardando el índice BM25 en disco.")
 
-    def add_documents(self, documents: List[Document]) -> None:
+    def has_source(self, source: str) -> bool:
         """
-        Agrega documentos al índice BM25. Se tokenizan los textos de los
-        documentos y se construye el índice BM25 con el corpus actualizado.
+        Comprueba rápidamente si un documento ya está indexado en BM25.
 
         Args:
-            documents (List[Document]): Lista de documentos a agregar al
+            source (str): Nombre del documento o fuente a comprobar.
+
+        Returns:
+            bool: True si ya existe al menos un chunk con esa fuente, False si
+            no existe ningún chunk con esa fuente.
+        """
+        # Se comprueba si el nombre del documento (source) ya está en el
+        # conjunto de fuentes indexadas.
+        exists = source in self.sources
+
+        # Se muestra un log indicando si el documento ya existe o es nuevo
+        # según el resultado de la comprobación
+        if exists:
+            logger.info(f"El documento '{source}' ya está indexado en BM25.")
+        else:
+            logger.info(f"El documento '{source}' es nuevo para BM25.")
+
+        # Se retorna el resultado de la comprobación de existencia del
+        # documento
+        return exists
+
+    def add_chunks(self, chunks: List[Document]) -> None:
+        """
+        Agrega chunks al índice BM25. Se tokenizan los textos de los
+        chunks y se construye el índice BM25 con el corpus actualizado.
+
+        Args:
+            chunks (List[Document]): Lista de chunks a agregar al
             índice.
         """
-        # Si no se proporcionan documentos, no se hace nada
-        if not documents:
+        # Si no se proporcionan chunks, no se hace nada
+        if not chunks:
             return
         
-        # Se añaden los nuevos documentos a la lista de documentos existente
-        self.documents.extend(documents)
+        # Se crea una lista para almacenar los nuevos chunks que se van a
+        # agregar al índice y un conjunto para almacenar los nombres de los
+        # documentos fuente de esos nuevos chunks
+        new_docs: List[Document] = []
+        new_sources: set[str] = set()
+        
+        # Para cada chunk de la lista de chunks proporcionada...
+        for doc in chunks:
 
-        # Se tokenizan los textos de los nuevos documentos
-        new_tokenized = [self._tokenize(doc.page_content) for doc in documents]
+            # Se comprueba el metadato "source" del chunk para obtener el
+            # nombre del documento fuente
+            source = doc.metadata.get("source")
 
-        # Se extiende el corpus tokenizado con los nuevos documentos
-        # tokenizados
+            # Si el nombre del documento fuente existe y no está ya indexado
+            # en BM25, se añade el chunk a la lista de nuevos chunks a agregar
+            # y se añade el nombre del documento fuente al conjunto de nuevas
+            # fuentes
+            if source and source not in self.sources:
+                new_docs.append(doc)
+                new_sources.add(source)
+
+        # Si no hay nuevos chunks para agregar, se loggea y se retorna
+        # sin hacer nada
+        if not new_docs:
+            logger.info("Todos los chunks ya estaban indexados en BM25.")
+            return
+        
+        # Se añaden los nuevos chunks a la lista de chunks existente
+        self.documents.extend(new_docs)
+
+        # Se tokenizan los textos de los nuevos chunks
+        new_tokenized = [self._tokenize(doc.page_content) for doc in new_docs]
+
+        # Se extiende el corpus con los nuevos chunks tokenizados
         self.tokenized_corpus.extend(new_tokenized)
 
-        # Se construye el índice BM25 con el corpus tokenizado actualizado
+        # Se actualiza el set de documentos fuente indexados (una sola vez
+        # por documento)
+        self.sources.update(new_sources)
+
+        # Se construye el índice BM25 con el corpus actualizado
         self.bm25 = BM25Okapi(self.tokenized_corpus)
+
+        # Se guarda el índice BM25 actualizado en disco para persistencia
+        self._save_index()
         logger.info(
-            f"BM25 actualizado: +{len(documents)} docs | "
-            f"Total: {len(self.documents)}."
+            f"BM25 actualizado: +{len(new_docs)} chunks | "
+            f"Total chunks: {len(self.documents)}."
         )
 
     def search(self, query: str, k: int = 20) -> List[Document]:
         """
-        Realiza una búsqueda en el índice BM25 para recuperar los documentos
+        Realiza una búsqueda en el índice BM25 para recuperar los chunks
         más relevantes para la consulta dada.
 
         Args:
-            query (str): Consulta de texto para buscar documentos relevantes.
+            query (str): Consulta de texto para buscar chunks relevantes.
             k (int): Número de resultados más relevantes a devolver.
             
         Returns:
-            List[Document]: Lista de documentos más relevantes según la
+            List[Document]: Lista de chunks más relevantes según la
             consulta.
         """
         # Si no hay índice BM25 inicializado, se devuelve una lista vacía

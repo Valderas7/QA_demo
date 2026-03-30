@@ -44,7 +44,6 @@ REGLAS DE RESPUESTA:
 - Responde de forma clara, precisa y directa.
 - Usa únicamente información presente en el contexto.
 - No hagas inferencias o suposiciones fuera del texto.
-- Cita siempre la fuente y número de página en formato (source, page).
 - Si la respuesta no está en el contexto, responde exactamente: "No encontrado".
 - No inventes ni uses conocimiento externo.
 """
