@@ -1,0 +1,41 @@
+# Se definen tres servicios
+services:
+
+  # El servicio api se construye a partir del Dockerfile en el directorio actual. Se exponen los puertos necesarios y se definen las variables de entorno para conectar con Qdrant y Ollama. Además, se establece que el servicio dependa de qdrant y ollama para asegurar que estén disponibles antes de iniciar la API.
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: qa_demo_api:latest
+    container_name: qa_demo_api
+    ports:
+      - "8000:8000"
+    environment:
+      - QDRANT_URL=http://qdrant:6333
+      - OLLAMA_BASE_URL=http://ollama:11434
+    depends_on:
+      - qdrant
+      - ollama
+    restart: unless-stopped
+
+  # El servicio qdrant se ejecuta a partir de la imagen oficial de Qdrant.
+  # Se exponen los puertos necesarios para la comunicación y se establece que
+  # el contenedor se reinicie automáticamente a menos que se detenga manualmente.
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: qa_demo_qdrant
+    ports:
+      - "6333:6333"
+    restart: unless-stopped
+
+  # El servicio ollama se construye a partir del Dockerfile. Durante el build,
+  # se descarga el modelo Gemma2:2b para que esté listo al iniciar el contenedor.
+  ollama:
+    build:
+      context: .
+      dockerfile: Dockerfile.ollama
+    image: qa_demo_ollama:latest
+    container_name: qa_demo_ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped

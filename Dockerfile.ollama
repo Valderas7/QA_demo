@@ -1,0 +1,9 @@
+# Imagen base de Ollama
+FROM ollama/ollama:0.19.0
+
+# Se ejecuta el servidor de Ollama para descargar el modelo Gemma2:2b y
+# luego se detiene el servidor
+RUN ollama serve & \
+    sleep 12 && \
+    ollama pull gemma2:2b && \
+    pkill -f "ollama serve" || true
