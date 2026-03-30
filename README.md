@@ -172,32 +172,36 @@ QA_demo/
 │       ├── ingest.py      # Endpoint para ingestar PDFs
 │       └── query.py       # Endpoint para consultas
 ├── core/
-│   ├── dependencies.py    # Dependencias compartidas (vectorstore)
-│   └── logging.py         # Configuración de logging
+│   ├── constants.py       # Constantes y configuración
+│   ├── dependencies.py    # Inyección de dependencias (servicios)
+│   ├── exceptions.py      # Excepciones personalizadas
+│   ├── logging.py         # Configuración de logging
+│   └── prompts.py         # Plantillas de prompts para LLM
 ├── services/
-│   ├── ingestion/
-│   │   ├── chunking.py    # Servicio de chunking de texto
-│   │   ├── embedding.py   # Servicio de embeddings
-│   │   ├── ingest.py      # Servicio de ingesta de PDFs
-│   │   └── vector_store.py # Servicio de base de datos vectorial
-│   └── query/
-│       ├── llm_service.py  # Servicio de LLM
-│       ├── rag_retriever.py # Recuperador RAG
-│       └── reranker.py     # Servicio de re-ranking
+│   ├── chunking.py        # Servicio de dividir texto en chunks
+│   ├── embedding.py       # Servicio de generación de embeddings
+│   ├── ingestion.py       # Servicio de ingesta de PDFs
+│   ├── llm_service.py     # Servicio de modelo de lenguaje (LLM)
+│   ├── reranker.py        # Servicio de re-ranking de resultados
+│   └── search/
+│       ├── hybrid.py      # Búsqueda híbrida (semántica + léxica)
+│       ├── lexical.py     # Búsqueda léxica
+│       └── semantic.py    # Búsqueda semántica vectorial
 ├── data/
-│   ├── pdfs/              # Directorio de PDFs públicos
-│   └── eval/              # Datos de evaluación con su
-│       ├── eval.jsonl     # 
-│       └── responses/     # Respuestas obtenidas con el RAG
+│   ├── pdfs/              # Directorio para almacenar PDFs
+│   ├── qdrant_db/         # Base de datos vectorial Qdrant
+│   └── eval/              # Datos de evaluación
+│       ├── eval.jsonl     # Conjunto de evaluación en formato JSONL
+│       └── responses/     # Respuestas generadas por el RAG
 └── tests/
-    └── dataset.py         # Script para descargar los PDFs públicos
+    └── dataset.py         # Utilidades para trabajar con datasets
 ```
 
 ## Configuración
 
 ### Modelos de embedding
 
-Por defecto, el proyecto utiliza modelos de Sentence Transformers. Puedes configurar el modelo en `services/ingestion/embedding.py`.
+Por defecto, el proyecto utiliza modelos de Sentence Transformers. Puedes configurar el modelo en [services/embedding.py](services/embedding.py).
 
 ### Modelo LLM
 
@@ -208,19 +212,19 @@ Asegúrate de tener el modelo descargado:
 ollama pull gemma2:2b
 ```
 
-Si deseas usar otro modelo, configúralo en `services/query/llm_service.py`. Otros modelos compatibles:
+Si deseas usar otro modelo, configúralo en [services/llm_service.py](services/llm_service.py). Otros modelos compatibles:
 - llama2
 - mistral
 - phi
 
 ### Base de datos vectorial
 
-FAISS se inicializa en memoria. Para persistencia, modifica `services/ingestion/vector_store.py`.
+El proyecto utiliza Qdrant como base de datos vectorial. Los datos se persisten en `data/qdrant_db/`. La configuración se puede modificar en los servicios de búsqueda (`services/search/`).
 
 
 ## Logs
 
-Los logs se generan en formato JSON estructurado para facilitar su análisis. La configuración se encuentra en `core/logging.py`.
+Los logs se generan en formato JSON estructurado para facilitar su análisis. La configuración se encuentra en [core/logging.py](core/logging.py).
 
 
 ## Decisiones Técnicas
@@ -233,7 +237,8 @@ El sistema implementa un pipeline RAG completo que combina recuperación de info
 
 2. **Embedding y Búsqueda Vectorial**
    - **Sentence Transformers**: Modelos pre-entrenados de HuggingFace para generar embeddings de alta calidad
-   - **FAISS (Facebook AI Similarity Search)**: Base de datos vectorial eficiente para búsqueda por similitud en memoria, lo que permite hacer búsquedas rápidas en un entorno local con baja latencia.
+   - **Qdrant**: Base de datos vectorial eficiente con búsqueda por similitud, almacenamiento persistente y bajo overhead de latencia
+   - **Búsqueda Híbrida**: Combinación de búsqueda semántica (vectorial) y léxica para mejorar la recuperación de documentos relevantes
 
 3. **Re-ranking**
    - Capa adicional de refinamiento tras la recuperación inicial, ya que evalúa cada par (query, documento) de forma conjunta, mejorando la relevancia de los documentos seleccionados antes de la generación
@@ -241,21 +246,13 @@ El sistema implementa un pipeline RAG completo que combina recuperación de info
 
 4. **Modelo de Lenguaje**
    - **Ollama con gemma2:2b**
-   - Ventaja: Modelo ligero (2B parámetros) ejecutado localmente.
-   - TDesventaja: Menor capacidad vs modelos más grandes
+   - Ventaja: Modelo ligero (2B parámetros) ejecutado localmente sin dependencias externas
+   - Desventaja: Menor capacidad comparado con modelos más grandes (7B+)
 
 5. **Framework y API**
    - **LangChain**: Abstracción de alto nivel para pipelines LLM
    - **FastAPI**: Framework moderno con validación automática (Pydantic), documentación OpenAPI y alto rendimiento
    - **Arquitectura modular**: Separación clara entre servicios (ingesta, query, embeddings, etc.)
-
-### Flujo de Datos
-
-```
-PDF → Extracción de texto → Chunking → Embeddings → FAISS
-                                                        ↓
-Query → Embedding → Búsqueda vectorial (top_k) → Re-ranking → LLM → Respuesta
-```
 
 ### Logging Estructurado
 
@@ -264,4 +261,6 @@ Query → Embedding → Búsqueda vectorial (top_k) → Re-ranking → LLM → R
 
 ### Escalabilidad
 
-- **Actual**: FAISS en memoria, ideal para prototipos y datasets pequeños-medianos
+- **Actual**: Qdrant con persistencia local, escalable para datasets medianos
+- **Búsqueda Híbrida**: Combinación de estrategias semánticas (vectoriales) y léxicas para mayor precisión
+- **Modular**: Arquitectura desacoplada que permite reemplazar componentes (embeddings, LLM, retriever) fácilmente
