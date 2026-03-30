@@ -83,7 +83,7 @@ async def ingest_pdf(
             # Se omite la ingesta
             logger.info(f"El PDF '{source}' ya estaba indexado. Se omite.")
             return {
-                "status": "ya_indexado",
+                "status": "Ya indexado",
                 "message": f"El documento '{source}' ya existe en el índice.",
                 "pages": 0,
                 "chunks": 0
@@ -126,7 +126,7 @@ async def ingest_pdf(
         return {
             "pages": len(pages),
             "chunks": len(chunks),
-            "status": "indexado"
+            "status": "Indexado"
         }
 
     # Si se lanza una excepción HTTP, se vuelve a lanzar para que FastAPI

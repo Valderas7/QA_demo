@@ -42,10 +42,9 @@ class SemanticSearchService:
         self.client = QdrantClient(path=self.path)
         self.db: QdrantVectorStore | None = None
         self.lock = threading.Lock()
-        self.sources: set[str] = set()
-        self._load_vectorstore_and_sources()
+        self._load_vectorstore()
 
-    def _load_vectorstore_and_sources(self) -> None:
+    def _load_vectorstore(self) -> None:
         """
         Carga la base de datos vectorial de Qdrant y reconstruye el set de
         documentos fuente indexados. Si la colección no existe, se inicializa
@@ -70,32 +69,14 @@ class SemanticSearchService:
                 collection_name=self.collection_name,
                 embedding=self.embeddings,
             )
-        
-            # Se realiza una consulta de scroll en Qdrant para obtener un
-            # punto del índice, incluyendo el campo 'source' de los vectores,
-            # con el fin de reconstruir el set de documentos fuente indexados
-            all_points = self.client.scroll(
-                collection_name=self.collection_name,
-                limit=1,
-                with_payload=["source"]
-            )[0]
 
-            # Si se obtienen puntos del índice, se extraen los nombres de los
-            # documentos fuente de los campos 'source' y se actualiza el set
-            # de fuentes indexadas
-            if all_points:
-                self.sources = {
-                    point.payload.get("source")
-                    for point in all_points
-                    if point.payload
-                }
-                logger.info(
-                    f"Qdrant cargado: {len(self.sources)} documentos fuente "
-                    "indexados."
-                )
-            
-            else:
-                logger.info("Colección Qdrant cargada pero está vacía.")
+            # Se realiza una consulta de conteo en Qdrant para contar cuántos
+            # vectores hay en la colección
+            total_chunks = self.client.count(self.collection_name).count
+            logger.info(
+                f"Qdrant cargado correctamente con {total_chunks} chunks "
+                "totales."
+            )
 
         # Si ocurre excepción, no se devuelve nada
         except Exception:
@@ -127,8 +108,7 @@ class SemanticSearchService:
             count_filter=Filter(
                 must=[
                     FieldCondition(
-                        key="source",
-                        match=MatchValue(value=source)
+                        key="metadata.source", match=MatchValue(value=source)
                     )
                 ]
             )
@@ -165,31 +145,23 @@ class SemanticSearchService:
         if not chunks:
             logger.warning("No se proporcionaron chunks para añadir.")
             return
+
+        # Se obtiene el nombre del documento fuente a partir del metadato
+        # "source"
+        sample_source = chunks[0].metadata.get("source")
+
+        # Si no se encuentra el metadato "source" en los chunks, se sale de
+        # la función sin hacer nada
+        if not sample_source:
+            logger.warning("Chunks sin metadata 'source'.")
+            return
         
-        # Se crea una lista para almacenar los nuevos chunks que se van a
-        # agregar al índice y un conjunto para almacenar los nombres de los
-        # documentos fuente de esos nuevos chunks
-        new_docs: List[Document] = []
-        new_sources: set[str] = set()
-
-        # Para cada chunk de la lista de chunks proporcionada...
-        for chunk in chunks:
-
-            # Se comprueba el metadato "source" del chunk para obtener el
-            # nombre del documento fuente
-            source = chunk.metadata.get("source")
-
-            # Si el nombre del documento fuente existe y no está ya indexado
-            # en Qdrant, se añade el chunk a la lista de nuevos chunks a
-            # agregar
-            if source and source not in self.sources:
-                new_docs.append(chunk)
-                new_sources.add(source)
-
-        # Si no hay nuevos chunks para agregar, se loggea y se retorna
-        # sin hacer nada
-        if not new_docs:
-            logger.info("Todos los chunks ya estaban indexados en Qdrant.")
+        # Se comprueba si el documento fuente ya existe en Qdrant para evitar
+        # añadir chunks duplicados
+        if self.has_source(sample_source):
+            logger.info(
+                f"El documento '{sample_source}' ya estaba indexado en Qdrant."
+            )
             return
 
         # Se adquiere el lock para asegurar que solo un hilo pueda
@@ -230,11 +202,7 @@ class SemanticSearchService:
                 )
             
             # Se añaden los nuevos chunks al índice vectorial
-            self.db.add_documents(new_docs)
-
-        # Se actualiza el set de documentos fuente indexados (una sola vez
-        # por documento)
-        self.sources.update(new_sources) 
+            self.db.add_documents(chunks)
 
         # Se muestra un log con el número de chunks añadidos y el total de
         # chunks en el índice después de la actualización
