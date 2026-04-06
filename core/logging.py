@@ -23,9 +23,9 @@ def setup_logging():
     logger.addHandler(log_handler)
     logger.setLevel(logging.INFO)
 
-    # Se aplica el manejador de logs creado al logger de 'werkzeug' para que
-    # los mensajes de las peticiones HTTP también se registren en formato JSON
-    werkzeug_logger = logging.getLogger('werkzeug')
-    werkzeug_logger.handlers.clear() 
-    werkzeug_logger.addHandler(log_handler)
-    werkzeug_logger.setLevel(logging.INFO)
+    # Se desactiva el logging de algunas librerías utilizadas para evitar
+    # logs excesivos
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("sentence_transformers").setLevel(logging.ERROR)
+    logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+    logging.getLogger("faiss").setLevel(logging.WARNING)

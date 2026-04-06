@@ -1,12 +1,11 @@
 # Librerías
-from core.dependencies import vectorstore
-from fastapi import APIRouter, HTTPException, Query
-from services.ingestion.vector_store import VectorStoreService
-from services.ingestion.embedding import EmbeddingService
-from services.query.rag_retriever import Retriever
-from services.query.reranker import Reranker
-from services.query.llm_service import LLMService
+import asyncio
 import logging
+from core.dependencies import get_services, Services
+from core.exceptions import VectorStoreNotInitializedError
+from fastapi.concurrency import run_in_threadpool
+from fastapi import APIRouter, Depends, HTTPException
+from typing import Annotated
 
 # Se obtiene el logger para este módulo
 logger = logging.getLogger(__name__)
@@ -14,57 +13,106 @@ logger = logging.getLogger(__name__)
 # Se crea un enrutador
 router = APIRouter()
 
-# Inicializamos servicios
-embedder = EmbeddingService()
-retriever = Retriever(embedder, vectorstore)
-reranker = Reranker()
-llm_service = LLMService()
 
-
-# Endpoint para hacer consulta
-@router.get("/query", tags=["Consulta"])
+@router.post(
+    "/query",
+    tags=["Consulta"],
+    responses={
+        200: {"description": "Respuesta generada correctamente."},
+        400: {"description": "Consulta inválida."},
+        500: {"description": "Error procesando la consulta."},
+        504: {"description": "Tiempo de espera agotado para generar la respuesta."}
+    }
+)
 async def query(
-    q: str = Query(..., description="Consulta en lenguaje natural"),
-    top_k: int = Query(5, description="Número de documentos a recuperar antes del reranking"),
-    rerank_top_k: int = Query(3, description="Número de documentos finales tras reranking")
+    query: str,
+    services: Annotated[Services, Depends(get_services)]
 ):
     """
-    Endpoint para realizar consultas sobre los PDFs ingeridos.
+    Endpoint para hacer una consulta. El endpoint recibe una consulta de
+    texto, realiza una búsqueda semántica en la base de datos vectorial
+    para recuperar los chunks más relevantes, los reordena utilizando un
+    modelo de reranking para priorizar los más relevantes, y luego genera
+    una respuesta utilizando un modelo de lenguaje que sintetiza la
+    información de los chunks reordenados para responder a la consulta.
     """
     # Se intenta...
     try:
 
-        # Recupera chunks relevantes
-        docs = retriever.retrieve(q, top_k=top_k)
+        # Si no se recibe una consulta o la consulta es demasiado larga, se
+        # lanza una excepción
+        if not query or len(query) > 1000:
+            raise HTTPException(400, "Consulta inválida")
 
-        # Re-ranking con esos documentos de Langchain
-        top_docs = reranker.rerank(q, docs, top_k=rerank_top_k)
+        # Se realiza una búsqueda semántica en la base de datos vectorial
+        # obteniendo los 10 chunks más relevantes para la consulta
+        docs = await run_in_threadpool(
+            services.hybrid_retriever.retrieve,
+            query,
+            10
+        )
 
-        # Generar la respuesta
-        response = llm_service.generate(q, top_docs)
+        # Se reordenan los chunks obtenidos utilizando el servicio de
+        # reranking, priorizando los más relevantes para la consulta y
+        # quedándose con los 3 mejores para generar la respuesta
+        reranked = await run_in_threadpool(
+            services.reranker.rerank,
+            query,
+            docs,
+            3
+        )
 
-        # Preparar salida (ya usa correctamente Document)
-        doc_output = [
-            {
-                "text": d.page_content,
-                "source": d.metadata.get("source"),
-                "page": d.metadata.get("page"),
-                "chunk_id": d.metadata.get("chunk_id")
-            }
-            for d in top_docs
-        ]
+        # Se genera una respuesta utilizando el servicio de LLM, que sintetiza
+        # la información de los chunks reordenados para responder a la
+        # consulta, esperando un máximo de 5 minutos para evitar que el proceso
+        # se quede colgado indefinidamente
+        answer = await asyncio.wait_for(
+            run_in_threadpool(
+                services.llm.generate,
+                query,
+                reranked
+            ),
+            timeout=600
+        )
 
-        # Devuelve el diccionario de respuesta con la consulta, la respuesta y
-        # los documentos de referencia con sus metadatos
+        # Se devuelve la respuesta generada junto con las fuentes de los chunks
+        # reordenados, incluyendo la página y la fuente de cada chunk para que
+        # el usuario pueda verificar la información si lo desea
         return {
-            "query": q,
-            "response": response,
-            "documents": doc_output
+            "answer": answer,
+            "sources": [
+                {
+                    "text": chunk.page_content,
+                    "source": chunk.metadata["source"],
+                    "page": chunk.metadata["page"]
+                }
+                for chunk in reranked
+            ]
         }
+    
+    # Si el tiempo de espera para generar la respuesta se agota, se lanza una
+    # excepción de timeout
+    except asyncio.TimeoutError:
+        logger.error("Tiempo de espera agotado para generar la respuesta.")
+        raise HTTPException(
+            status_code=504,
+            detail="Tiempo de espera agotado para generar la respuesta"
+        )
 
-    # Excepción
+    # Si se intenta hacer una consulta sin que el índice vectorial esté
+    # inicializado, se lanza una excepción específica indicando que el
+    # índice no está listo
+    except VectorStoreNotInitializedError as e:
+        logger.exception("Intento de consulta sin índice.")
+        raise HTTPException(
+            status_code=400,
+            detail="El índice vectorial no está inicializado"
+        ) from e
+
+    # Excepción general para capturar cualquier error que ocurra durante
+    # el procesamiento de la consulta
     except Exception as e:
-        logger.error(f"Error procesando consulta: {e}.")
+        logger.exception(f"Error procesando consulta: {e}.")
         raise HTTPException(
             status_code=500,
             detail="Error procesando la consulta"

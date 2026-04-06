@@ -8,7 +8,7 @@ from typing import Any, List, Dict
 logger = logging.getLogger(__name__)
 
 
-class IngestService:
+class IngestionService:
     """Clase para ingestar PDFs"""
 
     def load_pdf(self, file: bytes, source: str) -> List[Dict[str, Any]]:
@@ -18,8 +18,7 @@ class IngestService:
 
         Args:
             file (bytes): Contenido binario del archivo PDF.
-            source (str): Nombre o identificador del documento (ej: nombre
-            del archivo).
+            source (str): Nombre del archivo.
 
         Returns:
             list[dict]: Lista de páginas con la estructura:
@@ -41,12 +40,25 @@ class IngestService:
                 # Para cada página...
                 for i, page in enumerate(pdf.pages):
 
-                    # Se extrae el texto o si no, un string vacío
-                    text = page.extract_text() or ""
+                    # Se extrae el texto
+                    raw_text = page.extract_text()
+
+                    # Si no hay texto, se muestra una advertencia y se
+                    # continúa con la siguiente página
+                    if not raw_text:
+                        logger.warning(
+                            f"La página {i + 1} del archivo '{source}' "
+                            "no contiene capa de texto (necesario OCR)."
+                        )
+                        continue
+                    
+                    # Se limpia el texto eliminando espacios al inicio y
+                    # al final
+                    raw_text = raw_text.strip()
 
                     # Se divide el texto y se vuelve a unir para eliminar
                     # palabras raras
-                    text = " ".join(text.split())
+                    text = " ".join(raw_text.split())
                     
                     # Se añade a la lista un diccionario con el texto,
                     # el número de página y la fuente
@@ -56,13 +68,16 @@ class IngestService:
                         "source": source
                     })
 
-            # Se devuelve la lista de diccionario de páginas
+            # Mensaje de logging con el número de páginas procesadas
             logger.info(
                 f"{len(pages)} páginas procesadas del archivo "
-                f"'{source}'.")
+                f"'{source}'."
+            )
+
+            # Se devuelve la lista de diccionario de páginas
             return pages
         
         # Excepción
-        except Exception as e:
-            logger.error(f"Error procesando PDF {source}: {e}")
+        except Exception:
+            logger.exception(f"Error procesando el PDF '{source}'.")
             raise

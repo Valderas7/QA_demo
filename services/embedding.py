@@ -11,23 +11,19 @@ class EmbeddingService:
     de textos. Es utilizado en combinación con FAISS u otros
     vector stores para búsqueda semántica.
     """
-    def __init__(self) -> None:
+    def __init__(self, model_name = "BAAI/bge-base-en-v1.5") -> None:
         """
         Inicializa el modelo de embeddings.
 
         Carga un modelo preentrenado de SentenceTransformers
         optimizado para tareas de retrieval semántico.
+
+        Args:
+            model_name (str): Nombre del modelo de HuggingFace a usar.
+            Por defecto se usa "BAAI/bge-base-en-v1.5", un modelo
+            eficiente y preciso para embeddings en inglés.
         """
         self.embeddings = HuggingFaceEmbeddings(
-            model_name="BAAI/bge-base-en-v1.5"
+            model_name=model_name,
+            encode_kwargs={"normalize_embeddings": True}
         )
-
-    def get(self) -> HuggingFaceEmbeddings:
-        """
-        Devuelve la instancia del modelo de embeddings.
-
-        Returns:
-            HuggingFaceEmbeddings: Modelo listo para ser usado
-            en FAISS o cualquier vector database compatible.
-        """
-        return self.embeddings
